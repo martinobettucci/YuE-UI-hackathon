@@ -58,6 +58,13 @@ class GenerationStage(EnumHelper):
     Stage1 = (0, 'Stage 1')
     Stage2 = (1, 'Stage 2')
 
+class GenerationStageMode(EnumHelper):
+    Stage1 = (0, 'Stage 1')
+    Stage2 = (1, 'Stage 2')
+    Stage1And2 = (2, 'Stage 1+2')
+    Stage1Post = (3, 'Stage 1 cache only')
+    Stage2Post = (4, 'Stage 2 cache only')
+
 class AudioPromptMode(EnumHelper):
     Off=(0, "Off")
     SingleTrack=(1, "Single Track")
@@ -551,18 +558,12 @@ class AppMain:
     def create_generation_tab(self):
 
         with gr.Row():
-            self._generation_stages = self.S("generation_stage", gr.CheckboxGroup(
-                label="Generation Stages",
-                choices=[str(stage) for stage in GenerationStage],
-                value=[str(GenerationStage.Stage1), str(GenerationStage.Stage2)],
-                info="Select stages to generate"
-            ))
 
-            self._generation_output_stage = self.S("generation_output_stage", gr.Radio(
-                label="Output stage",
-                choices=[str(stage) for stage in GenerationStage],
-                value=str(GenerationStage.Stage2),
-                info="Select which stage to post process"
+            self._generation_stage_mode = self.S("generation_stage_mode", gr.Radio(
+                label="Stage configuration",
+                choices=[str(mode) for mode in GenerationStageMode],
+                value=str(GenerationStageMode.Stage1And2),
+                info="Select stage configuration. You can generate the stages independently, together or use the cached data."
             ))
 
             self._generation_output_format = self.S("generation_output_format", gr.Radio(
@@ -604,53 +605,91 @@ class AppMain:
                 outputs=[self._generation_cache],
             )
 
-        self._generation_mode = self.S("generation_mode", gr.Radio(
-            label="Generation mode",
-            choices=[str(mode) for mode in GenerationMode],
-            value=str(GenerationMode.Continue),
-            info="Full will generate the whole song while continue will generate a selected portion."
-        ))
+        with gr.Tab("General settings"):
+            self._generation_mode = self.S("generation_mode", gr.Radio(
+                label="Generation mode",
+                choices=[str(mode) for mode in GenerationMode],
+                value=str(GenerationMode.Continue),
+                info="Full will generate the whole song while continue will generate a selected portion."
+            ))
 
-        self._generation_length = self.S("generation_length", gr.Slider(
-            label="Generation length",
-            value=5,
-            minimum=1,
-            maximum=60,
-            step=1,
-            visible=True,
-            info="Select the length of the audio to be generated in seconds.",
-        ))
+            self._generation_length = self.S("generation_length", gr.Slider(
+                label="Generation length",
+                value=5,
+                minimum=1,
+                maximum=60,
+                step=1,
+                visible=True,
+                info="Select the length of the audio to be generated in seconds.",
+            ))
 
-        self._generation_randomize_seed = self.S("generation_randomize_seed", gr.Checkbox(
-            label="Randomize Seed",
-            value=True,
-            info="Randomize the seed for each batch.",
-        ))
+            self._generation_randomize_seed = self.S("generation_randomize_seed", gr.Checkbox(
+                label="Randomize Seed",
+                value=True,
+                info="Randomize the seed for each batch.",
+            ))
 
-        self._generation_seed = self.S("generation_seed", gr.Number(
-            label="Seed",
-            value=42,
-            precision=0,
-            info="Seed for random number generation."
-        ))
+            self._generation_seed = self.S("generation_seed", gr.Number(
+                label="Seed",
+                value=42,
+                precision=0,
+                info="Seed for random number generation."
+            ))
 
-        # Show/hide length based on mode
-        def update_mode_settings(mode):
-            if mode == GenerationMode.Continue.name:
-                return gr.Slider(visible=True)
-            else:
-                return gr.Slider(visible=False)
+            # Show/hide length based on mode
+            def update_mode_settings(mode):
+                if mode == GenerationMode.Continue.name:
+                    return gr.Slider(visible=True)
+                else:
+                    return gr.Slider(visible=False)
 
-        self._generation_mode.select(fn=update_mode_settings, inputs=[self._generation_mode], outputs=[self._generation_length])
+            self._generation_mode.select(fn=update_mode_settings, inputs=[self._generation_mode], outputs=[self._generation_length])
 
-        self._generation_batches = self.S("generation_batches", gr.Slider(
-            label="Batches",
-            value=1,
-            minimum=1,
-            maximum=AppMain.MaxBatches,
-            step=1,
-            info="Select the number of batches to generate."
-        ))
+            self._generation_batches = self.S("generation_batches", gr.Slider(
+                label="Batches",
+                value=1,
+                minimum=1,
+                maximum=AppMain.MaxBatches,
+                step=1,
+                info="Select the number of batches to generate."
+            ))
+
+        with gr.Tab("Stage 1 settings"):
+            self._generation_stage1_cfg_scale = self.S("generation_stage1_cfg_scale", gr.Slider(
+                label="CFG",
+                value=1.5,
+                minimum=0.05,
+                maximum=2.5,
+                step=0.05,
+                info="Select the guidance scale for classifier free guidance (CFG). A higher value adheres to the prompt more closely but suffers in quality."
+            ))
+
+            self._generation_stage1_top_p = self.S("generation_stage1_top_p", gr.Slider(
+                label="top_p",
+                value=0.93,
+                minimum=0,
+                maximum=1,
+                step=0.01,
+                info="A value < 1 will only keep the smallest set of the most probable tokens during generation."
+            ))
+
+            self._generation_stage1_temperature = self.S("generation_stage1_temperature", gr.Slider(
+                label="Temperature",
+                value=1,
+                minimum=0.01,
+                maximum=5,
+                step=0.01,
+                info="A greater value adds more randomness to the output, while a smaller value will result in more predictable output."
+            ))
+
+            self._generation_repetition_penalty = self.S("generation_repetition_penalty", gr.Slider(
+                label="Repetition penalty",
+                value=1.1,
+                minimum=1,
+                maximum=1.5,
+                step=0.01,
+                info="A value > 1 will reduce the likelyhood of repeated tokens."
+            ))
 
         with gr.Row():
             self._generation_start = gr.Button("Submit")
@@ -806,8 +845,32 @@ class AppMain:
 
         prompt_mode = AudioPromptMode.from_string(R(self._audio_prompt_mode))
         generation_mode = GenerationMode.from_string(R(self._generation_mode))
-        generation_stages = set([GenerationStage.from_string(stage) for stage in R(self._generation_stages)])
-        output_stage = GenerationStage.from_string(R(self._generation_output_stage))
+                
+        generation_stage_mode = GenerationStageMode.from_string(R(self._generation_stage_mode))
+
+        generation_stages = set()
+
+        output_stage = None
+
+        match generation_stage_mode:
+            case GenerationStageMode.Stage1:
+                generation_stages.add(GenerationStage.Stage1)
+                output_stage = GenerationStage.Stage1
+            case GenerationStageMode.Stage2:
+                generation_stages.add(GenerationStage.Stage2)
+                output_stage = GenerationStage.Stage2
+            case GenerationStageMode.Stage1And2:
+                generation_stages.add(GenerationStage.Stage1)
+                generation_stages.add(GenerationStage.Stage2)
+                output_stage = GenerationStage.Stage2
+            case GenerationStageMode.Stage1Post:
+                output_stage = GenerationStage.Stage1
+            case GenerationStageMode.Stage2Post:
+                output_stage = GenerationStage.Stage2
+
+        #generation_stages = set([GenerationStage.from_string(stage) for stage in R(self._generation_stages)])
+        #output_stage = GenerationStage.from_string(R(self._generation_output_stage))
+
         output_format = GenerationFormat.from_string(R(self._generation_output_format))
 
         use_audio_prompt = prompt_mode == AudioPromptMode.SingleTrack
@@ -824,7 +887,10 @@ class AppMain:
             audio_prompt_path = R(self._audio_prompt_file),
             instrumental_track_prompt_path = R(self._instrumental_track_prompt_file),
             vocal_track_prompt_path = R(self._vocal_track_prompt_file),
-            stage1_no_guidance = None,
+            stage1_guidance_scale=R(self._generation_stage1_cfg_scale),
+            stage1_top_p=R(self._generation_stage1_top_p),
+            stage1_temperature = R(self._generation_stage1_temperature),
+            stage1_repetition_penalty = R(self._generation_repetition_penalty),
             rescale = False,
             hq_audio = output_format==GenerationFormat.Wav,
             output_dir = self._output_dir,

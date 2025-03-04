@@ -28,12 +28,10 @@ class SampleSettings:
     top_p = 0.93
     temperature = 1
     repetition_penalty = 1.1
-    guidance_scale_seg0 = 1.5  # None to disable cfg
     guidance_scale = 1.2  # None to disable cfg
 
     def __init__(self, use_guidance: bool = True, repetition_penalty: float = 1.1):
         if not use_guidance:
-            self.guidance_scale_seg0 = None
             self.guidance_scale = None
         self.repetition_penalty = repetition_penalty
 
@@ -293,7 +291,7 @@ class Stage1Pipeline_EXL2(Stage1Pipeline):
         sample_settings: SampleSettings,
     ) -> torch.Tensor:
 
-        if sample_settings.guidance_scale_seg0 is None:
+        if sample_settings.guidance_scale is None:
             bsz = 1
             cfg = False
             position_offsets = None
@@ -366,8 +364,7 @@ class Stage1Pipeline_EXL2(Stage1Pipeline):
 
                 # Transformers-equiv. CFG
                 if cfg:
-                    # TODO FIX
-                    cfg_scale = sample_settings.guidance_scale_seg0 if iseg == 0 else sample_settings.guidance_scale
+                    cfg_scale = sample_settings.guidance_scale
                     logits = logits.float()
                     logits = F.log_softmax(logits, dim=-1)
                     logits = cfg_scale * logits[0] + (1 - cfg_scale) * logits[1]
