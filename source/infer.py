@@ -86,7 +86,10 @@ class GenerationParams:
     audio_prompt_path: str = None
     instrumental_track_prompt_path: str = None
     vocal_track_prompt_path: str = None
-    stage1_no_guidance: bool = False
+    stage1_guidance_scale: float = 1.5
+    stage1_top_p: float = 0.93
+    stage1_temperature: float = 1.0
+    stage1_repetition_penalty: float = 1.1
     rescale: bool = False
     hq_audio: bool = False
     output_dir: str = "outputs"
@@ -235,12 +238,18 @@ class Generator:
             segment_length, prompt_ids = self.get_stage1_prompt(input, iseg, params.resume)
             prompts.append((segment_length, prompt_ids))
         
+        sample_settings = SampleSettings()
+        sample_settings.guidance_scale = params.stage1_guidance_scale
+        sample_settings.temperature = params.stage1_temperature
+        sample_settings.top_p = params.stage1_top_p
+        sample_settings.repetition_penalty = params.stage1_repetition_penalty
+
         raw_output = self._stage1_pipeline.generate(
             generation_token=params.token,
             start_context=start_context,
             prompts=prompts,
             max_new_tokens=max_new_tokens,
-            sample_settings=SampleSettings(use_guidance=not params.stage1_no_guidance),
+            sample_settings=sample_settings,
         )
 
         if not params.token():
