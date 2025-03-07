@@ -120,30 +120,7 @@ def load_and_process_genres(json_path):
     
     return sorted_items
 
-class AppMain:    
-
-    DownloadDataJs = """
-    function(src) {
-        dst=src.split('/').pop()
-        fetch("gradio_api/file="+src)
-        .then((res)=> {
-            if (!res.ok) {
-                throw new Error("Can't download file!")
-            }
-            return res.blob()
-        })
-        .then((file)=> {
-            let tmpUrl = URL.createObjectURL(file)
-            const tmpElem = document.createElement("a")
-            tmpElem.href=tmpUrl
-            tmpElem.download=dst
-            document.body.appendChild(tmpElem)
-            tmpElem.click()
-            URL.revokeObjectURL(tmpUrl)
-            tmpElem.remove()
-        })
-    }
-    """
+class AppMain:
 
     AllowedPaths: list = ["outputs"]
     MaxBatches: int = 10
@@ -170,6 +147,8 @@ class AppMain:
         
         self._output_dir = os.path.join(self._working_directory, "outputs")
         self._model_dir = os.path.join(self._working_directory, "models")
+
+        gr.set_static_paths(paths=["icons", "scripts"])
 
         self._component_serializers = {}
         self._interface = self.create_interface()
@@ -267,8 +246,8 @@ class AppMain:
 
         for segment in cache.segments():
             for istage in range(Song.NrStages):
-                name, start_token, end_token = segment                
-                elem_size = 8 if istage == 1 else 1                
+                name, start_token, end_token = segment
+                elem_size = 8 if istage == 1 else 1
                 start_token = start_token * elem_size
                 end_token = end_token * elem_size
                 track_length = len(cache.track(istage, 0))
@@ -283,7 +262,17 @@ class AppMain:
     def create_interface(self):
         theme = gr.themes.Base()
 
-        with gr.Blocks(title="YuE - UI", theme=theme) as interface:
+        css = ""
+        with open("scripts/style.css") as file:
+            css = file.read()
+
+        head="""
+        <script type="module" src="/gradio_api/file=scripts/wavesurfer.esm.js"></script>
+        <script type="module" src="/gradio_api/file=scripts/audioplayer.js"></script>
+        <script type="module" src="/gradio_api/file=scripts/utils.js"></script>
+        """
+
+        with gr.Blocks(head=head, css=css, title="YuE - UI", theme=theme) as interface:
             gr.Markdown("# YuE - UI")
 
             self.create_states()
@@ -306,7 +295,6 @@ class AppMain:
     def create_states(self):
         self._generation_token = gr.State()
         self._generation_outputs = gr.State()
-        self._local_storage = gr.BrowserState({})
 
         def load_cache(cache_data):
             cache = GenerationCache(Song.NrStages)
@@ -526,14 +514,15 @@ class AppMain:
 
             output_project_file = gr.File(visible=False)
             output_file_path = gr.Textbox(visible=False)
+            serialized_state = gr.State()
 
             self._download_button.click(
                 fn=self.save_state,
                 inputs=self.serialized_components(),
-                outputs=[self._local_storage]
+                outputs=[serialized_state]
             ).then(
                 fn=self.save_state_file,
-                inputs=[self._local_storage],
+                inputs=[serialized_state],
                 outputs=[output_project_file]
             ).then(
                 fn=lambda x: x.replace('\\', '/'),
@@ -541,17 +530,17 @@ class AppMain:
                 outputs=[output_file_path],
             ).success(
                 fn=None,
-                js=AppMain.DownloadDataJs,
+                js="(src)=>autoDownloadData(src)",
                 inputs=[output_file_path]
             )
 
             self._upload_button.upload(
                 fn=self.load_state_file,
                 inputs=[self._upload_button],
-                outputs=[self._local_storage]
+                outputs=[serialized_state]
             ).success(
                 fn = self.load_state,
-                inputs=[self._local_storage],
+                inputs=[serialized_state],
                 outputs=self.serialized_components()
             )
 
@@ -710,7 +699,7 @@ class AppMain:
             # Hide players
             fn=self.hide_players,
             inputs=None,
-            outputs=[data[0] for data in self._players],
+            outputs=[player.column for player in self._players],
         ).then(
             # Init token & set button states
             fn=lambda: (GenerationToken(), gr.Button(interactive=False), gr.Button(interactive=True), gr.Label(visible=True)),
@@ -734,7 +723,7 @@ class AppMain:
             # Show players
             fn=self.update_players,
             inputs=[self._generation_outputs],
-            outputs=[elem for data in self._players for elem in data],
+            outputs=[elem for player in self._players for elem in (player.column, player.accept_button, player.reject_button, player.audio_file)],
         )
 
         self._generation_stop.click(
@@ -745,6 +734,13 @@ class AppMain:
             outputs = [self._generation_token]
         )
 
+    @dataclass
+    class AudioPlayer:
+        column : gr.Column
+        accept_button : gr.Button
+        reject_button : gr.Button
+        audio_file : gr.File
+
     def make_audio_players(self, 
                      nr_players: int):
         
@@ -754,7 +750,48 @@ class AppMain:
 
         for i in range(nr_players):
             with gr.Column(visible=False) as player_col:
-                audio_player = gr.Audio(f"outputs/dummyfilename.mp3", label=f"Batch{i}")
+                audio_file = gr.File(label=f"Batch{i}", visible=False, interactive=False)
+
+                def load_audio_data(player_index):
+                    return """
+                    function(file){
+                        var event_target = document.querySelector('#wavesurfer_player%d')
+                        const event = new CustomEvent("load", { detail : {"url" : file.url } })
+                        event_target.dispatchEvent(event)
+                    }
+                    """ % (player_index)
+
+                audio_file.change(
+                    fn=None,
+                    inputs=audio_file,
+                    js=load_audio_data(i)
+                )
+
+                gr.HTML("""
+                        <div>
+                            <div class="time" id="time">0:00</div>
+                            <div class="duration" id="duration">0:00</div>
+
+                            <div class="play_button" id="play_button">
+                                <div class="button_container">
+                                    <div id="play">
+                                        <img src="gradio_api/file=icons/Play.svg" class="button_bottom"></img>
+                                        <img src="gradio_api/file=icons/Play.svg" class="button_top"></img>
+                                    </div>
+                                    <div id="pause" style="visibility: hidden;">
+                                        <img src="gradio_api/file=icons/Pause.svg" class="button_bottom"></img>
+                                        <img src="gradio_api/file=icons/Pause.svg" class="button_top"></img>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="download_button">
+                                <div class="download_button_container" id="download_button">
+                                    <img src="gradio_api/file=icons/Download.svg" class="button_bottom"></img>
+                                    <img src="gradio_api/file=icons/Download.svg" class="button_top"></img>
+                                </div>
+                            </div>
+                        </div>""", elem_id=f"wavesurfer_player{i}")
 
                 with gr.Row():
                     accept_button = gr.Button(value="✔", min_width=0, size="sm")
@@ -769,7 +806,7 @@ class AppMain:
                     reject_button.click(fn=lambda: gr.update(visible=False),
                                         outputs=[player_col])
 
-                    self._players.append((player_col, accept_button, reject_button, audio_player))
+                    self._players.append(self.AudioPlayer(column=player_col, accept_button=accept_button, reject_button=reject_button, audio_file=audio_file))
 
         # Stores the serialized project data
         output_file_state = gr.State()
@@ -787,11 +824,11 @@ class AppMain:
                     continue
 
                 # Hide column
-                hidden_components.append(self._players[j][0])
+                hidden_components.append(self._players[j].column)
 
             # Hide accept/reject buttons
-            hidden_components.append(self._players[i][1])
-            hidden_components.append(self._players[i][2])
+            hidden_components.append(self._players[i].accept_button)
+            hidden_components.append(self._players[i].reject_button)
 
             accept_buttons[i].click(
                 # Hide other players
@@ -817,7 +854,7 @@ class AppMain:
                 outputs=[output_file_path],
             ).success(
                 fn=None,
-                js=AppMain.DownloadDataJs,
+                js="(src)=>autoDownloadData(src)",
                 inputs=[output_file_path]
             )            
 
@@ -831,7 +868,7 @@ class AppMain:
             outputs.append(gr.update(visible=visible))
             outputs.append(gr.update(visible=visible))
             outputs.append(gr.update(visible=visible))
-            outputs.append(gr.Audio(visible=True, value=generated_final_outputs[iplayer][0]) if visible else gr.skip())
+            outputs.append(gr.File(visible=False, value=generated_final_outputs[iplayer][0]) if visible else gr.skip())
 
         return outputs
 
@@ -868,9 +905,6 @@ class AppMain:
             case GenerationStageMode.Stage2Post:
                 output_stage = GenerationStage.Stage2
 
-        #generation_stages = set([GenerationStage.from_string(stage) for stage in R(self._generation_stages)])
-        #output_stage = GenerationStage.from_string(R(self._generation_output_stage))
-
         output_format = GenerationFormat.from_string(R(self._generation_output_format))
 
         use_audio_prompt = prompt_mode == AudioPromptMode.SingleTrack
@@ -895,9 +929,6 @@ class AppMain:
             hq_audio = output_format==GenerationFormat.Wav,
             output_dir = self._output_dir,
         )
-
-        torch.autograd.grad_mode._enter_inference_mode(True)
-        torch.autograd.set_grad_enabled(False)
 
         token.start_generation()
 
@@ -945,84 +976,86 @@ class AppMain:
         
         generation_seeds = [seed() for _ in range(generation_batches)]
 
-        if GenerationStage.Stage1 in generation_stages:            
-            try:
-                # Only load the required dependencies to generate the audio prompt to avoiding vram spikes
-                generator.load_stage1_first()
+        if GenerationStage.Stage1 in generation_stages:
+            with torch.no_grad():
+                try:
+                    # Only load the required dependencies to generate the audio prompt to avoiding vram spikes
+                    generator.load_stage1_first()
 
-                song.set_audio_prompt(generator.get_stage1_audio_prompt(params=params) if params.use_audio_prompt or params.use_dual_tracks_prompt else [])
+                    song.set_audio_prompt(generator.get_stage1_audio_prompt(params=params) if params.use_audio_prompt or params.use_dual_tracks_prompt else [])
 
-                # Load model
-                generator.load_stage1_second()
+                    # Load model
+                    generator.load_stage1_second()
 
-                for ibatch in tqdm(range(generation_batches)):
+                    for ibatch in tqdm(range(generation_batches)):
 
-                    generator.set_seed(generation_seeds[ibatch])
+                        generator.set_seed(generation_seeds[ibatch])
 
-                    output_song = generator.generate_stage1(
-                        input=song,
-                        params=params
-                    )
+                        output_song = generator.generate_stage1(
+                            input=song,
+                            params=params
+                        )
 
-                    if not token():
-                        raise Exception("Stopped")
+                        if not token():
+                            raise Exception("Stopped")
 
-                    stage1_outputs.append(output_song)
-            except Exception as e:
-                token.stop_generation()
-                raise gr.Error(f"Stage 1 generation failed: {str(e)}")
-            finally:                
-                generator.unload_stage1()
-            prev_stage_outputs = stage1_outputs
+                        stage1_outputs.append(output_song)
+                except Exception as e:
+                    token.stop_generation()
+                    raise gr.Error(f"Stage 1 generation failed: {str(e)}")
+                finally:                
+                    generator.unload_stage1()
+                prev_stage_outputs = stage1_outputs
 
         if GenerationStage.Stage2 in generation_stages:
+            with torch.no_grad():
+                try:
+                    generator.load_stage2()
+
+                    for ibatch, stage1_output in tqdm(enumerate(prev_stage_outputs)):
+                        
+                        generator.set_seed(generation_seeds[ibatch])
+
+                        output_song = generator.generate_stage2(
+                            input=stage1_output,
+                            params=params
+                        )
+
+                        if not token():
+                            raise Exception("Stopped")
+
+                        stage2_outputs.append(output_song)
+                except Exception as e:
+                    token.stop_generation()
+                    raise gr.Error(f"Stage 2 generation failed: {str(e)}")
+                finally:
+                    generator.unload_stage2()
+                prev_stage_outputs = stage2_outputs
+
+        with torch.no_grad():
             try:
-                generator.load_stage2()
+                generator.load_post_process()
 
-                for ibatch, stage1_output in tqdm(enumerate(prev_stage_outputs)):
-                    
-                    generator.set_seed(generation_seeds[ibatch])
-
-                    output_song = generator.generate_stage2(
-                        input=stage1_output,
-                        params=params
-                    )
+                for ibatch, post_process_input in tqdm(enumerate(prev_stage_outputs)):
+                    files = generator.post_process(
+                        input=post_process_input,
+                        stage_idx=output_stage.value[0],
+                        output_name=f"output_{ibatch}",
+                        params = params)
 
                     if not token():
                         raise Exception("Stopped")
-
-                    stage2_outputs.append(output_song)
+                    
+                    generation_cache = GenerationCache.create_from_song(post_process_input)
+                    generation_state = copy.deepcopy(input_state)
+                    generation_state["cache"] = generation_cache.save()
+                    generation_state["generation_seed"] = generation_seeds[ibatch]
+                    final_outputs = final_outputs + [(files[0], generation_cache, generation_state)]
             except Exception as e:
                 token.stop_generation()
-                raise gr.Error(f"Stage 2 generation failed: {str(e)}")
+                raise gr.Error(f"Post process failed: {str(e)}")
             finally:
-                generator.unload_stage2()
-            prev_stage_outputs = stage2_outputs
-
-
-        try:
-            generator.load_post_process()
-
-            for ibatch, post_process_input in tqdm(enumerate(prev_stage_outputs)):
-                files = generator.post_process(
-                    input=post_process_input,
-                    stage_idx=output_stage.value[0],
-                    output_name=f"output_{ibatch}",
-                    params = params)
-
-                if not token():
-                    raise Exception("Stopped")
-                
-                generation_cache = GenerationCache.create_from_song(post_process_input)
-                generation_state = copy.deepcopy(input_state)
-                generation_state["cache"] = generation_cache.save()
-                generation_state["generation_seed"] = generation_seeds[ibatch]
-                final_outputs = final_outputs + [(files[0], generation_cache, generation_state)]
-        except Exception as e:
-            token.stop_generation()
-            raise gr.Error(f"Post process failed: {str(e)}")
-        finally:
-            generator.unload_post_process()
+                generator.unload_post_process()
 
         token.stop_generation()
 
