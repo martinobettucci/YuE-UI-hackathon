@@ -13,7 +13,7 @@ from infer import GenerationToken, GenerationParams, Generator, Stage1Config, St
 from song import Song, GenerationCache
 
 import gradio as gr
-from gradio_vistimeline import VisTimeline, VisTimelineItem
+from gradio_vistimeline import VisTimeline, VisTimelineData
 from tqdm import tqdm
 import torch
 
@@ -30,6 +30,18 @@ def date_to_milliseconds(date):
         return int((dt - epoch).total_seconds() * 1000)
     else:
         return 0  # Fallback for unsupported types
+
+def tokens_to_ms(nr_tokens: int):
+    return nr_tokens * 1000 // 50
+
+def ms_to_tokens(milliseconds: int):
+    return (milliseconds * 50) // 1000
+
+def seconds_to_tokens(seconds: int):
+    return seconds * 50
+
+def tokens_to_seconds(tokens: int):
+    return tokens // 50
 
 class EnumHelper(Enum):
     def __str__(self):
@@ -124,6 +136,11 @@ class AppMain:
 
     AllowedPaths: list = ["outputs"]
     MaxBatches: int = 10
+
+    CacheTimelineGroup: int = 0
+    SongTimelineGroup: int = 1
+
+    MinTimelineBlockMs: int = 20
 
     DefaultStage1Model: str = "YuE-s1-7B-anneal-en-cot-exl2"
     DefaultStage1CacheMode: str = "Q4"
@@ -242,22 +259,124 @@ class AppMain:
         return f"{minutes:02}:{seconds:02}:{cent:02}"
     
     def song_data_cache_to_timeline(self, timeline: VisTimeline, cache: GenerationCache):
-        timeline.items = []
+
+        stage_names = ("Stage 1", "Stage 2")
+        timeline_items = []
+
+        for istage in range(Song.NrStages):
+            
+            track_length = len(cache.track(istage, 0))
+            if track_length == 0:
+                continue
+
+            elem_size = 8 if istage == 1 else 1
+
+            timeline_items.append({
+                "content" : stage_names[istage],
+                "group" : AppMain.CacheTimelineGroup,
+                "subgroup": stage_names[istage],
+                "start" : "0",
+                "end" : str(tokens_to_ms(track_length//elem_size)),
+                "editable" : False,
+                "selectable": False,
+            })
 
         for segment in cache.segments():
-            for istage in range(Song.NrStages):
-                name, start_token, end_token = segment
-                elem_size = 8 if istage == 1 else 1
-                start_token = start_token * elem_size
-                end_token = end_token * elem_size
-                track_length = len(cache.track(istage, 0))
-                if track_length == 0 or start_token > track_length:
-                    continue
-                if end_token > track_length:
-                    end_token = track_length
-                timeline.items.append(VisTimelineItem(content=name, group=istage, start=str(start_token//elem_size*1000//50), end=str(end_token//elem_size*1000//50)))
+            name, start_token, end_token = segment
+            start_token = start_token
+            end_token = end_token
+            track_length = len(cache.track(0, 0))
+            if track_length == 0 or start_token > track_length:
+                continue
+            if end_token > track_length:
+                end_token = track_length
 
-        return timeline
+            timeline_items.append({
+                "content" : name,
+                "group" : AppMain.SongTimelineGroup,
+                "start" : str(tokens_to_ms(start_token)),
+                "end" : str(tokens_to_ms(end_token)),
+            })
+
+        value = {
+            "items" : timeline_items,
+            "groups": self._timeline_groups,
+        }
+
+        return VisTimelineData.model_validate_json(json.dumps(value))
+
+    def timeline_to_song_data_cache(self, timeline: VisTimeline, cache: GenerationCache):
+
+        new_segments = []
+        for item in timeline.items:
+            if item.group == AppMain.SongTimelineGroup:
+                new_segments.append((item.content, date_to_milliseconds(item.start), date_to_milliseconds(item.end)))
+
+        segments = [(segment[0], tokens_to_ms(segment[1]), tokens_to_ms(segment[2])) for segment in cache.segments()]
+
+        assert(len(segments) == len(new_segments))
+
+        max_segments = len(segments)
+
+        def modified_segment(segments):
+            for iseg, seg in enumerate(new_segments):
+                if seg != segments[iseg]:
+                    return iseg, seg
+            return None, None
+
+        modified_segment_idx, modified_segment = modified_segment(segments)
+
+        if not modified_segment:
+            return cache
+
+        max_segment_length = tokens_to_ms(len(cache.track(0, 0)))
+
+        mod_segment_name, mod_segment_start, mod_segment_end = new_segments[modified_segment_idx]
+
+        mod_segment_min_start_pos = modified_segment_idx * AppMain.MinTimelineBlockMs
+        mod_segment_max_end_pos = max_segment_length - (max_segments - modified_segment_idx - 1) * AppMain.MinTimelineBlockMs
+
+        # First segment starts at 0
+        if modified_segment_idx == 0:
+            mod_segment_start = 0
+
+        mod_segment_start = max(mod_segment_start, mod_segment_min_start_pos)
+        mod_segment_start = min(mod_segment_start, mod_segment_max_end_pos - AppMain.MinTimelineBlockMs)
+        mod_segment_end = max(mod_segment_end, mod_segment_start + AppMain.MinTimelineBlockMs)
+        mod_segment_end = min(mod_segment_end, mod_segment_max_end_pos)
+
+        new_segments[modified_segment_idx] = (mod_segment_name, mod_segment_start, mod_segment_end)
+
+        # Adjust preceding segments
+        for iseg in range(modified_segment_idx - 1, -1, -1):
+            _, succeeding_seg_start, _ = new_segments[iseg + 1]
+            name, start, end = new_segments[iseg]
+
+            # Preceding block end must be aligned with succeeding block start
+            end = succeeding_seg_start
+            # Ensure block is at least AppMain.MinTimelineBlockMs
+            if start + AppMain.MinTimelineBlockMs > end:
+                start = end - AppMain.MinTimelineBlockMs
+
+            new_segments[iseg] = (name, start, end)
+        
+        # Adjust succeeding segments
+        for iseg in range(modified_segment_idx + 1, max_segments):
+            _, _, preceeding_seg_end = new_segments[iseg - 1]
+            name, start, end = new_segments[iseg]
+
+            # Succeeding block start must be algiend with precceding block end
+            start = preceeding_seg_end
+            # Ensure block is at least AppMain.MinTimelineBlockMs
+            if start + AppMain.MinTimelineBlockMs > end:
+                end = start + AppMain.MinTimelineBlockMs
+
+            new_segments[iseg] = (name, start, end)
+
+        adjusted_segments = [(segment[0], ms_to_tokens(segment[1]), ms_to_tokens(segment[2])) for segment in new_segments]
+        cache.set_segments(adjusted_segments)
+
+        return cache
 
     def create_interface(self):
         theme = gr.themes.Base()
@@ -461,13 +580,14 @@ class AppMain:
             ))
 
     def create_timeline(self):
+        self._timeline_groups = [
+            {"id": 0, "content": "Cache"},
+            {"id": 1, "content": "Segments"},
+        ]
         self._timeline = VisTimeline(
             label="Generated song",
             value={
-                "groups": [
-                    {"id": 0, "content": "Stage 1"}, 
-                    {"id": 1, "content": "Stage 2"},
-                ],
+                "groups": self._timeline_groups,
             },
             options={
                 "moment": "+00:00",
@@ -476,11 +596,12 @@ class AppMain:
                     "add": False,
                     "remove": False,
                     "updateGroup": False,
-                    "updateTime": False,
+                    "updateTime": True,
+                    "overrideItems" : False,
                 },
                 "itemsAlwaysDraggable": {
-                    "item": False,
-                    "range": False
+                    "item": True,
+                    "range": True
                 },
                 "showMajorLabels": False,
                 "format": {
@@ -496,11 +617,23 @@ class AppMain:
                 "end": 200000,
                 "min": 0,
                 "max": 600000,
+                "snap" : None,
                 "zoomMin": 1000, 
             },
+            preserve_old_content_on_value_change=True
         )
 
         self._generation_cache.change(
+            fn=self.song_data_cache_to_timeline,
+            inputs=[self._timeline, self._generation_cache],
+            outputs=[self._timeline]
+        )
+
+        self._timeline.input(
+            fn=self.timeline_to_song_data_cache,
+            inputs=[self._timeline, self._generation_cache],
+            outputs=[self._generation_cache],
+        ).then(
             fn=self.song_data_cache_to_timeline,
             inputs=[self._timeline, self._generation_cache],
             outputs=[self._timeline]
@@ -912,7 +1045,7 @@ class AppMain:
 
         params = GenerationParams(
             token = token,
-            max_new_tokens = R(self._generation_length) * 50 if generation_mode == GenerationMode.Continue else None,
+            max_new_tokens = seconds_to_tokens(R(self._generation_length)) if generation_mode == GenerationMode.Continue else None,
             resume = generation_mode == GenerationMode.Continue,
             use_audio_prompt = use_audio_prompt,
             use_dual_tracks_prompt = use_dual_tracks_prompt,
@@ -956,7 +1089,7 @@ class AppMain:
         genre_text = " ".join(R(self._genre_selection))
         song.set_genre(genre_text)
         song.set_system_prompt(R(self._system_prompt))
-        song.set_default_track_length(int(R(self._default_segment_length) * 50))
+        song.set_default_track_length(int(seconds_to_tokens(R(self._default_segment_length))))
 
         cache = R(self._generation_cache)
         cache.transfer_to_song(song)

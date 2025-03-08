@@ -198,7 +198,7 @@ class GenerationCache:
         self._tracks=[[] for i in range(nr_stages)]
         self._segments = []
 
-    def add_segment(self, name, start, end):
+    def add_segment(self, name: str, start: int, end: int):
         self._segments.append((name, start, end))
 
     def add_tracks(self, stageidx: int, tracks: list):
@@ -207,6 +207,9 @@ class GenerationCache:
     def segments(self):
         return self._segments
     
+    def set_segments(self, segments: list):
+        self._segments = segments
+
     def track(self, stageidx: int, trackidx: int):
         if stageidx < len(self._tracks) and trackidx < len(self._tracks[stageidx]):
             return self._tracks[stageidx][trackidx]
