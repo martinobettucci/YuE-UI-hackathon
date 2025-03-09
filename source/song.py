@@ -14,14 +14,14 @@ def parse_tag(tag_name, tag_data):
 
 # Parse lyrics in segments: name, tags & lyrics
 def parse_lyrics(lyrics):
-    pattern = r"(#.*?(?=\[))?\[(\w+)\](.*?)(?=\[|\Z|#)"
+    pattern = r"(#.*?(?=\[))?\[([^\[\]]+)\](.*?)(?=\[|\Z|#)"
     raw_segments = re.findall(pattern, lyrics, re.DOTALL)
     tag_pattern = r"#(\w+)(.*?)(?=#|\Z)";
 
     segments = []
-    for segment in raw_segments:
+    for iseg, segment in enumerate(raw_segments):
         tag_block, section_name, lyrics = segment
-        raw_tags = re.findall(tag_pattern, tag_block, re.DOTALL)        
+        raw_tags = re.findall(tag_pattern, tag_block, re.DOTALL)
 
         tags = dict()
         
@@ -37,7 +37,7 @@ def parse_lyrics(lyrics):
                 print(f"Invalid tag #{tag_name} {tag_data}")
                 pass
 
-        segments.append(SongSegment.create(section_name.strip(), tags, lyrics.strip()))
+        segments.append(SongSegment.create(iseg, section_name.strip(), tags, lyrics.strip()))
 
     return segments    
         
@@ -52,11 +52,12 @@ class SongSegment:
     def create_empty_tracks():
         return [[[] for _ in range(Song.NrTracks)] for _ in range(Song.NrStages)]
 
-    def create(name, tags, lyrics):
+    def create(idx, name, tags, lyrics):
         segment = SongSegment()
+        segment._idx = idx
         segment._name = name
         segment._tags = tags
-        segment._lyrics = lyrics        
+        segment._lyrics = lyrics
         return segment
     
     def as_str(self):
@@ -64,6 +65,9 @@ class SongSegment:
 
     def __str__(self):
         return self.as_str()
+
+    def index(self):
+        return self._idx
 
     def name(self):
         return self._name
@@ -164,6 +168,27 @@ class Song():
     def segments(self):
         return self._segments
 
+    def remove_segment(self, segmentidx):
+        del self._segments[segmentidx]
+
+    def mute_segments(self, muted_segments):
+        segments = [seg for seg in self._segments]
+        for isegment in reversed(sorted(muted_segments)):
+            del segments[isegment]
+        self._original_segments = self._segments
+        self._segments = segments
+    
+    def restore_muted_segments(self):
+        if self._original_segments:
+            segments = self._original_segments
+
+            for segment in self._segments:
+                segments[segment.index()] = segment
+
+            self._segments = segments
+
+            self._original_segments = None
+
     def lyrics(self):
         return self._lyrics
 
@@ -197,6 +222,7 @@ class GenerationCache:
     def __init__(self, nr_stages: int = 2):
         self._tracks=[[] for i in range(nr_stages)]
         self._segments = []
+        self._muted_segments = set()
 
     def add_segment(self, name: str, start: int, end: int):
         self._segments.append((name, start, end))
@@ -204,11 +230,43 @@ class GenerationCache:
     def add_tracks(self, stageidx: int, tracks: list):
         self._tracks[stageidx] = tracks
 
+    def split_last_segment(self, new_name: str):
+        if self._segments:
+            name, start, end = self._segments[-1]
+            half_tokens = (end - start) // 2
+            self._segments[-1] = (name, start, start + half_tokens)
+            self._segments.append((new_name, start + half_tokens, end))
+
+    def remove_last_segment(self):
+        if self._segments:
+            _,_,prev_end = self._segments[-1]
+            del self._segments[-1]
+            if self._segments:
+                name, start, end = self._segments[-1]
+                self._segments[-1] = (name, start, prev_end)
+
     def segments(self):
         return self._segments
     
     def set_segments(self, segments: list):
         self._segments = segments
+
+    def is_muted(self, segmentidx: int):
+        return segmentidx in self._muted_segments
+    
+    def toggle_mute(self, segmentidx: int):
+        if segmentidx in self._muted_segments:
+            self._muted_segments.remove(segmentidx)
+            return False
+        else:
+            self._muted_segments.add(segmentidx)
+            return True
+
+    def muted_segments(self):
+        return list(self._muted_segments)
+    
+    def set_muted_segments(self, muted_segments):
+        self._muted_segments = set(muted_segments)
 
     def track(self, stageidx: int, trackidx: int):
         if stageidx < len(self._tracks) and trackidx < len(self._tracks[stageidx]):
@@ -270,12 +328,15 @@ class GenerationCache:
                             end_pos = len(track)
                         
                         song[isegment].set_track(istage, itrack, track[start_pos:end_pos])
+
     def save(self):
         data = dict()
         data["tracks"] = copy.deepcopy(self._tracks)
         data["segments"] = copy.deepcopy(self._segments)
+        data["muted_segments"] = list(self._muted_segments)
         return data
 
     def load(self, data):
         self._tracks = data.get("tracks", self._tracks)
         self._segments = data.get("segments", self._segments)
+        self._muted_segments = set(data.get("muted_segments", self._muted_segments))

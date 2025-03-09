@@ -10,7 +10,7 @@ import random
 from tempfile import NamedTemporaryFile
 
 from infer import GenerationToken, GenerationParams, Generator, Stage1Config, Stage2Config
-from song import Song, GenerationCache
+from song import Song, GenerationCache, parse_lyrics
 
 import gradio as gr
 from gradio_vistimeline import VisTimeline, VisTimelineData
@@ -281,7 +281,7 @@ class AppMain:
                 "selectable": False,
             })
 
-        for segment in cache.segments():
+        for iseg, segment in enumerate(cache.segments()):
             name, start_token, end_token = segment
             start_token = start_token
             end_token = end_token
@@ -292,10 +292,12 @@ class AppMain:
                 end_token = track_length
 
             timeline_items.append({
+                "id" : iseg,
                 "content" : name,
                 "group" : AppMain.SongTimelineGroup,
                 "start" : str(tokens_to_ms(start_token)),
                 "end" : str(tokens_to_ms(end_token)),
+                "className": "color-primary-900" if not cache.is_muted(iseg) else "",
             })
 
         value = {
@@ -333,12 +335,8 @@ class AppMain:
 
         mod_segment_name, mod_segment_start, mod_segment_end = new_segments[modified_segment_idx]
 
-        mod_segment_min_start_pos = modified_segment_idx * AppMain.MinTimelineBlockMs
+        mod_segment_min_start_pos = modified_segment_idx * AppMain.MinTimelineBlockMs if modified_segment_idx > 0 else 0
         mod_segment_max_end_pos = max_segment_length - (max_segments - modified_segment_idx - 1) * AppMain.MinTimelineBlockMs
-
-        # First segment starts at 0
-        if modified_segment_idx == 0:
-            mod_segment_start = 0
 
         mod_segment_start = max(mod_segment_start, mod_segment_min_start_pos)
         mod_segment_start = min(mod_segment_start, mod_segment_max_end_pos - AppMain.MinTimelineBlockMs)
@@ -365,7 +363,7 @@ class AppMain:
             _, _, preceeding_seg_end = new_segments[iseg - 1]
             name, start, end = new_segments[iseg]
 
-            # Succeeding block start must be algiend with precceding block end
+            # Succeeding block start must be aligned with precceding block end
             start = preceeding_seg_end
             # Ensure block is at least AppMain.MinTimelineBlockMs
             if start + AppMain.MinTimelineBlockMs > end:
@@ -376,6 +374,27 @@ class AppMain:
         adjusted_segments = [(segment[0], ms_to_tokens(segment[1]), ms_to_tokens(segment[2])) for segment in new_segments]
         cache.set_segments(adjusted_segments)
 
+        return cache
+
+    def timeline_select_item(self, timeline, event_data: gr.EventData):
+        return event_data._data
+
+    def cache_split_segment(self, lyrics_text: str, cache: GenerationCache):
+        segments = parse_lyrics(lyrics_text)
+        if cache.segments():
+            _, start, end = cache.segments()[-1]
+            if tokens_to_ms(end - start) >= AppMain.MinTimelineBlockMs * 2:
+                nr_segments = len(cache.segments())
+                if nr_segments < len(segments):
+                    cache.split_last_segment(segments[nr_segments].name())
+
+    def cache_remove_segment(self, cache: GenerationCache):
+        cache.remove_last_segment()
+
+    def toggle_mute_selected_timeline_items(self, muted_items: list, cache: GenerationCache):
+        for iseg in muted_items:
+            if iseg < len(cache.segments()) - 1:
+                cache.toggle_mute(iseg)
         return cache
 
     def create_interface(self):
@@ -414,6 +433,7 @@ class AppMain:
     def create_states(self):
         self._generation_token = gr.State()
         self._generation_outputs = gr.State()
+        self._selected_timeline_items = gr.State([])
 
         def load_cache(cache_data):
             cache = GenerationCache(Song.NrStages)
@@ -584,6 +604,7 @@ class AppMain:
             {"id": 0, "content": "Cache"},
             {"id": 1, "content": "Segments"},
         ]
+
         self._timeline = VisTimeline(
             label="Generated song",
             value={
@@ -603,6 +624,7 @@ class AppMain:
                     "item": True,
                     "range": True
                 },
+                "multiselect" : True,
                 "showMajorLabels": False,
                 "format": {
                     "minorLabels": {
@@ -623,6 +645,48 @@ class AppMain:
             preserve_old_content_on_value_change=True
         )
 
+        with gr.Row(visible=False) as options_row:
+            self._timeline_toggle_mute = gr.Button("Toggle mute segment(s)")
+            with gr.Row(visible=True) as extra_options_row:
+                self._timeline_split_segment = gr.Button("Split segment")
+                self._timeline_remove_segment = gr.Button("Remove segment")
+                self._selected_timeline_items_extra_options_row = extra_options_row
+            self._selected_timeline_items_options_row = options_row
+
+        self._timeline_split_segment.click(
+            fn=self.cache_split_segment,
+            inputs=[self._lyrics_text, self._generation_cache],
+        ).then(
+            fn=lambda: [],
+            outputs=[self._selected_timeline_items]
+        ).then(
+            fn=self.song_data_cache_to_timeline,
+            inputs=[self._timeline, self._generation_cache],
+            outputs=[self._timeline]
+        )
+
+        self._timeline_remove_segment.click(
+            fn=lambda cache: cache.remove_last_segment(),
+            inputs=[self._generation_cache],
+        ).then(
+            fn=lambda: [],
+            outputs=[self._selected_timeline_items]
+        ).then(
+            fn=self.song_data_cache_to_timeline,
+            inputs=[self._timeline, self._generation_cache],
+            outputs=[self._timeline]
+        )
+
+        self._timeline_toggle_mute.click(
+            fn=self.toggle_mute_selected_timeline_items,
+            inputs=[self._selected_timeline_items, self._generation_cache],
+            outputs=[self._generation_cache]
+        ).then(
+            fn=self.song_data_cache_to_timeline,
+            inputs=[self._timeline, self._generation_cache],
+            outputs=[self._timeline]
+        )
+
         self._generation_cache.change(
             fn=self.song_data_cache_to_timeline,
             inputs=[self._timeline, self._generation_cache],
@@ -637,6 +701,21 @@ class AppMain:
             fn=self.song_data_cache_to_timeline,
             inputs=[self._timeline, self._generation_cache],
             outputs=[self._timeline]
+        )
+
+        self._timeline.item_select(
+            fn=self.timeline_select_item,
+            inputs=[self._timeline],
+            outputs=[self._selected_timeline_items]
+        )
+        
+        self._selected_timeline_items.change(
+            fn=lambda selection, cache: [
+                gr.update(visible=len(selection)>0), 
+                gr.update(visible=len(selection)==1 and len(cache.segments())-1 in selection)
+                ],
+            inputs=[self._selected_timeline_items, self._generation_cache],
+            outputs=[self._selected_timeline_items_options_row, self._selected_timeline_items_extra_options_row]
         )
 
     def create_sidebar(self):
@@ -700,6 +779,7 @@ class AppMain:
         with gr.Row():
             self._rewind_1s = gr.Button("Rewind 1 s")
             self._rewind_5s = gr.Button("Rewind 5 s")
+            self._delete_generation_cache = gr.Button("🗑️")
 
             def rewind(time_ms):
                 def inner(generation_cache: GenerationCache):
@@ -719,8 +799,6 @@ class AppMain:
                 inputs=[self._generation_cache],
                 outputs=[self._generation_cache]
             )
-
-            self._delete_generation_cache = gr.Button("🗑️")
 
             self._delete_generation_cache.click(
                 fn=lambda: GenerationCache(Song.NrStages),
@@ -1093,6 +1171,7 @@ class AppMain:
 
         cache = R(self._generation_cache)
         cache.transfer_to_song(song)
+        song.mute_segments(cache.muted_segments())
 
         output_song = None
         prev_stage_outputs = [song]
@@ -1149,6 +1228,8 @@ class AppMain:
                         
                         generator.set_seed(generation_seeds[ibatch])
 
+                        stage1_output.restore_muted_segments()
+
                         output_song = generator.generate_stage2(
                             input=stage1_output,
                             params=params
@@ -1170,6 +1251,9 @@ class AppMain:
                 generator.load_post_process()
 
                 for ibatch, post_process_input in tqdm(enumerate(prev_stage_outputs)):
+
+                    post_process_input.restore_muted_segments()
+
                     files = generator.post_process(
                         input=post_process_input,
                         stage_idx=output_stage.value[0],
@@ -1178,8 +1262,9 @@ class AppMain:
 
                     if not token():
                         raise Exception("Stopped")
-                    
+
                     generation_cache = GenerationCache.create_from_song(post_process_input)
+                    generation_cache.set_muted_segments(cache.muted_segments())
                     generation_state = copy.deepcopy(input_state)
                     generation_state["cache"] = generation_cache.save()
                     generation_state["generation_seed"] = generation_seeds[ibatch]

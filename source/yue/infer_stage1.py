@@ -44,7 +44,6 @@ def load_audio_mono(filepath, sampling_rate: int = 16000, start_time: int = 0, e
         resampler = Resample(orig_freq=sr, new_freq=sampling_rate)
         audio = resampler(audio)
 
-    dtype = audio.dtype
     audio = audio.squeeze().cpu().numpy()
 
     start_time = start_time * sampling_rate
@@ -53,7 +52,7 @@ def load_audio_mono(filepath, sampling_rate: int = 16000, start_time: int = 0, e
     if end_time == 0 or end_time > len(audio):
         end_time = len(audio)
 
-    return torch.tensor([audio[start_time : end_time]], dtype=dtype)
+    return torch.from_numpy(np.array([audio[start_time : end_time]]))
 
 def encode_audio(codec_model, audio_prompt, device, target_bw=0.5):
     if len(audio_prompt.shape) < 3:
