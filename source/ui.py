@@ -1,3 +1,4 @@
+from argparse import ArgumentParser
 from collections import OrderedDict
 from collections.abc import Callable
 import copy
@@ -815,7 +816,7 @@ class AppMain:
 
             self._generation_length = self.S("generation_length", gr.Slider(
                 label="Generation length",
-                value=5,
+                value=6,
                 minimum=1,
                 maximum=60,
                 step=1,
@@ -1287,5 +1288,9 @@ class AppMain:
         self._interface.launch(server_name=self._server_name, server_port=self._server_port, allowed_paths=self._allowed_paths)
 
 if __name__ == "__main__":
-    app = AppMain()
+    parser = ArgumentParser()
+    parser.add_argument("--server_name", type=str, default="127.0.0.1", help="The address to host YuE-UI gradio interface on")
+    parser.add_argument("--server_port", type=int, default=7860, help="The port to host YuE-UI gradio interface on")
+    args = parser.parse_args()
+    app = AppMain(server_name=args.server_name, server_port=args.server_port)
     app.launch()
