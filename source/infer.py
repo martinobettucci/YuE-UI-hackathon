@@ -92,6 +92,8 @@ class GenerationParams:
     stage1_repetition_penalty: float = 1.1
     rescale: bool = False
     hq_audio: bool = False
+    enable_trim_output: bool = False,
+    trim_output_duration: int = 12,
     output_dir: str = "outputs"
 
 class PostProcessor:
@@ -329,7 +331,13 @@ class Generator:
                     output_name: str,
                     params: GenerationParams) -> tuple:
         encoder = [encode_stage1, encode_stage2]
-        tracks = [encoder[stage_idx](track) for track in input.merge_segments(stage_idx)]
+
+        if params.enable_trim_output:
+            max_duration = params.trim_output_duration * 50
+        else:
+            max_duration = 0
+
+        tracks = [encoder[stage_idx](track[-max_duration:]) for track in input.merge_segments(stage_idx)]
         return self._post_process.generate(input = tracks, output_name = output_name, params = params)
 
     def set_seed(self, seed: int):

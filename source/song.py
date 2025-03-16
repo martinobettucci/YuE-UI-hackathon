@@ -212,6 +212,12 @@ class Song():
             tracks.append(track_full)
         return tracks
 
+    def stage_length(self, istage):
+        total_length = 0
+        for segment in self._segments:
+            total_length = total_length + len(segment.track(istage, 0))
+        return total_length
+
     def length_seconds(self):
         return self.length() / 50
 

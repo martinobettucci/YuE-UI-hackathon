@@ -245,9 +245,16 @@ class AppMain:
             load:Callable
             save:Callable
 
+        def default_load(serialized_data):
+            if isinstance(component, gr.File):
+                if serialized_data and not os.path.exists(serialized_data):
+                    print(f"Error: can't find {identifier} {serialized_data}")
+                    return None
+            return serialized_data
+
         self._component_serializers[identifier] = ComponentSerializer(
             component = component,
-            load = load if load else lambda x: x,
+            load = load if load else default_load,
             save = save if save else lambda x: x,
         )
 
@@ -760,19 +767,42 @@ class AppMain:
     def create_generation_tab(self):
 
         with gr.Row():
+            with gr.Column(scale=3):
+                self._generation_stage_mode = self.S("generation_stage_mode", gr.Radio(
+                    label="Stage configuration",
+                    choices=[str(mode) for mode in GenerationStageMode],
+                    value=str(GenerationStageMode.Stage1And2),
+                    info="Select stage configuration. You can generate the stages independently, together or use the cached data."
+                ))
 
-            self._generation_stage_mode = self.S("generation_stage_mode", gr.Radio(
-                label="Stage configuration",
-                choices=[str(mode) for mode in GenerationStageMode],
-                value=str(GenerationStageMode.Stage1And2),
-                info="Select stage configuration. You can generate the stages independently, together or use the cached data."
-            ))
+            with gr.Column(scale=1):
+                self._generation_output_trim_mode = self.S("generation_output_trim_mode", gr.Checkbox(
+                    label="Trim output",
+                    value=False,
+                    info="Only output the last part of the song + newly generated audio.",
+                ))
+
+                self._generation_output_trim_duration = self.S("generation_output_trim_duration", gr.Slider(
+                    label="Keep duration", 
+                    value=12,
+                    minimum=1, 
+                    maximum=60, 
+                    step=1,
+                    info="Choose how many seconds to include from the last part of the song.",
+                    visible=False,
+                ))
+
+            self._generation_output_trim_mode.change(
+                fn=lambda enabled: gr.update(visible=enabled),
+                inputs=[self._generation_output_trim_mode],
+                outputs=[self._generation_output_trim_duration]
+            )
 
             self._generation_output_format = self.S("generation_output_format", gr.Radio(
                 label="Format",
                 choices=[str(stage) for stage in GenerationFormat],
                 value=str(GenerationFormat.Mp3),
-                info="Select audio format"
+                info="Select audio format."
             ))
 
         self.create_timeline()
@@ -1122,6 +1152,8 @@ class AppMain:
         use_audio_prompt = prompt_mode == AudioPromptMode.SingleTrack
         use_dual_tracks_prompt = prompt_mode == AudioPromptMode.DualTrack
 
+        trim_output_duration = R(self._generation_output_trim_duration)
+
         params = GenerationParams(
             token = token,
             max_new_tokens = seconds_to_tokens(R(self._generation_length)) if generation_mode == GenerationMode.Continue else None,
@@ -1139,6 +1171,8 @@ class AppMain:
             stage1_repetition_penalty = R(self._generation_repetition_penalty),
             rescale = False,
             hq_audio = output_format==GenerationFormat.Wav,
+            enable_trim_output=R(self._generation_output_trim_mode),
+            trim_output_duration=trim_output_duration,
             output_dir = self._output_dir,
         )
 
@@ -1172,6 +1206,9 @@ class AppMain:
 
         cache = R(self._generation_cache)
         cache.transfer_to_song(song)
+
+        input_song_length = song.stage_length(output_stage.value[0])
+
         song.mute_segments(cache.muted_segments())
 
         output_song = None
@@ -1254,6 +1291,10 @@ class AppMain:
                 for ibatch, post_process_input in tqdm(enumerate(prev_stage_outputs)):
 
                     post_process_input.restore_muted_segments()
+
+                    output_song_length = post_process_input.stage_length(output_stage.value[0])
+
+                    params.trim_output_duration = trim_output_duration + tokens_to_seconds(output_song_length - input_song_length)
 
                     files = generator.post_process(
                         input=post_process_input,
