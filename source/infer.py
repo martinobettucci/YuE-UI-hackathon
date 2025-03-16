@@ -5,13 +5,15 @@ from dataclasses import dataclass
 
 sys.path.append(os.path.join(os.getcwd(), "source", "yue"))
 
-from yue.infer_stage1 import Stage1Pipeline_EXL2, SampleSettings
+from yue.infer_stage1 import Stage1Pipeline_EXL2, SampleSettings, load_audio_mono, encode_audio, zero_pad_audio_tracks
+from yue.codecmanipulator import CodecManipulator
 from yue.infer_stage2 import Stage2Pipeline_EXL2
 from yue.infer_postprocess import post_process, encode_stage1, encode_stage2
 from yue.common import seed_everything
 from song import Song
 import numpy as np
 import torch
+from tqdm import tqdm
 
 from omegaconf import OmegaConf
 from yue.models.soundstream_hubert_new import SoundStream
@@ -342,3 +344,50 @@ class Generator:
 
     def set_seed(self, seed: int):
         seed_everything(seed)
+
+def import_audio_tracks(
+        cuda_device_idx: int,
+        vocal_track_path: str,
+        instrumental_track_path: str,
+        start_time: int,
+        end_time: int):
+    
+    try:
+        device = torch.device(f"cuda:{cuda_device_idx}" if torch.cuda.is_available() else "cpu")
+        config = PostProcessConfig()
+        model_config = OmegaConf.load(config.basic_model_config)
+        assert model_config.generator.name == "SoundStream"
+        codec_model = SoundStream(**model_config.generator.config).to(device)
+        parameter_dict = torch.load(config.resume_path, map_location=device, weights_only=False)
+        codec_model.load_state_dict(parameter_dict["codec_model"])
+        codec_model.eval()
+        del parameter_dict
+
+        vocal_audio_data = load_audio_mono(vocal_track_path, start_time=start_time, end_time=end_time)
+        instrumental_audio_data = load_audio_mono(instrumental_track_path, start_time=start_time, end_time=end_time)
+
+        vocal_audio_data, instrumental_audio_data = zero_pad_audio_tracks(vocal_audio_data, instrumental_audio_data)
+
+        stages = []
+        encoders = [(CodecManipulator("xcodec", 0, 1), 0.5), (CodecManipulator("xcodec", 0, 8), 6)]
+
+        for encoder, bw in tqdm(encoders):
+            vocals_ids = encode_audio(codec_model, vocal_audio_data, device, target_bw=bw)
+            instrumental_ids = encode_audio(codec_model, instrumental_audio_data, device, target_bw=bw)
+            
+            vocals_ids = encoder.npy2ids(vocals_ids[0])
+            instrumental_ids = encoder.npy2ids(instrumental_ids[0])
+
+            stages.append((vocals_ids, instrumental_ids))
+
+            del vocals_ids
+            del instrumental_ids
+    finally:
+        del vocal_audio_data
+        del instrumental_audio_data
+        del codec_model
+        del encoders
+        torch.cuda.empty_cache()
+        gc.collect()
+
+    return stages

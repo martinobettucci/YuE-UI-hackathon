@@ -279,6 +279,14 @@ class GenerationCache:
             return self._tracks[stageidx][trackidx]
         return []
 
+    def import_stages(self, stages: list):
+        for istage, stage in enumerate(stages):
+            for itrack, track in enumerate(stage):
+                if itrack >= len(self._tracks[istage]):
+                    self._tracks[istage].append(track)
+                else:
+                    self._tracks[istage][itrack] = self._tracks[istage][itrack] + track
+
     def rewind(self, timems: int):
         iseg = len(self._segments) - 1
 

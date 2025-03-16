@@ -10,7 +10,7 @@ import os
 import random
 from tempfile import NamedTemporaryFile
 
-from infer import GenerationToken, GenerationParams, Generator, Stage1Config, Stage2Config
+from infer import GenerationToken, GenerationParams, Generator, Stage1Config, Stage2Config, import_audio_tracks
 from song import Song, GenerationCache, parse_lyrics
 
 import gradio as gr
@@ -397,7 +397,9 @@ class AppMain:
                     cache.split_last_segment(segments[nr_segments].name())
 
     def cache_remove_segment(self, cache: GenerationCache):
-        cache.remove_last_segment()
+        new_cache = copy.deepcopy(cache)
+        new_cache.remove_last_segment()
+        return new_cache
 
     def toggle_mute_selected_timeline_items(self, muted_items: list, cache: GenerationCache):
         for iseg in muted_items:
@@ -433,6 +435,8 @@ class AppMain:
                 with gr.Column():
                     with gr.Tab("Generation"):
                         self.create_generation_tab()
+                    with gr.Tab("Import"):
+                        self.create_import_tab()
 
             self.create_sidebar()
 
@@ -440,6 +444,7 @@ class AppMain:
 
     def create_states(self):
         self._generation_token = gr.State()
+        self._generation_input = gr.State({})
         self._generation_outputs = gr.State()
         self._selected_timeline_items = gr.State([])
 
@@ -674,8 +679,9 @@ class AppMain:
         )
 
         self._timeline_remove_segment.click(
-            fn=lambda cache: cache.remove_last_segment(),
+            fn=self.cache_remove_segment,
             inputs=[self._generation_cache],
+            outputs=[self._generation_cache],
         ).then(
             fn=lambda: [],
             outputs=[self._selected_timeline_items]
@@ -764,6 +770,95 @@ class AppMain:
                 outputs=self.serialized_components()
             )
 
+    def run_import_audio_track(
+            self,
+            input_state: dict,
+            generation_cache: GenerationCache,
+            vocal_track: str,
+            instrumental_track: str,
+            start_time: int,
+            end_time: int,
+            progress=gr.Progress(track_tqdm=True)):
+        
+        if not vocal_track and not instrumental_track:
+            raise gr.Error(f"Error no audio tracks provided!")
+
+        progress(0, desc="Starting")
+
+        if start_time < 0 or start_time > end_time:
+            raise gr.Error(f"Invalid start / end time")
+        
+        if len(generation_cache.track(0,0)) != len(generation_cache.track(1,0))//8:
+            raise gr.Error(f"Error stage 1 & state 2 contents must have equal duration. Generate stage 2 first in order to continue.")
+
+        def R(component):
+            return self.read_state_value(saved_data=input_state, component=component)
+        try:
+            with torch.no_grad():
+                stages = import_audio_tracks(
+                    cuda_device_idx=R(self._cuda_idx),
+                    vocal_track_path=vocal_track,
+                    instrumental_track_path=instrumental_track,
+                    start_time=start_time,
+                    end_time=end_time
+                )
+                generation_cache = copy.deepcopy(generation_cache)
+                generation_cache.import_stages(stages)
+
+        except Exception as e:
+            raise gr.Error(f"Import audio failed: {str(e)}")
+
+        return gr.skip(), generation_cache
+
+    def create_import_tab(self):
+        gr.Markdown(
+        "## Import Audio Tracks\n"
+        "Import audio tracks into the song. Optionally one track can be omitted, e.g. the vocal track, in that case it will be replaced with a silent track. "
+        "Note that the existing stage 1 and stage 2 contents has to be equal duration for the import to succeed.")
+
+        vocal_track = gr.File(label="Upload Vocal Track File",
+            file_types=["audio"],
+            file_count="single",
+        )
+
+        instrumental_track = gr.File(label="Upload Instrumental Track File",
+            file_types=["audio"],
+            file_count="single",
+        )
+
+        start_time = gr.Number(
+            label="Import Start Time (s)",
+            value=0,
+            info="The start time in seconds to import from the given audio file."
+        )
+
+        end_time = gr.Number(
+            label="Import End Time (s)",
+            value=30,
+            info="The end time in seconds to import from the given audio file."
+        )
+
+        import_button = gr.Button("Import audio")
+
+        progress = gr.Label(label="Importing", visible=False)
+
+        import_button.click(
+            # Save current state
+            fn=self.save_state,
+            inputs=self.serialized_components(),
+            outputs=self._generation_input
+        ).then(
+            fn=lambda: (gr.update(interactive=False), gr.update(visible=True)),
+            outputs=[import_button, progress],
+        ).then(
+            fn=self.run_import_audio_track,
+            inputs=[self._generation_input, self._generation_cache, vocal_track, instrumental_track, start_time, end_time],
+            outputs=[progress, self._generation_cache]
+        ).then(
+            fn=lambda: (gr.update(interactive=True), gr.update(visible=False)),
+            outputs=[import_button, progress],
+        )
+
     def create_generation_tab(self):
 
         with gr.Row():
@@ -808,9 +903,34 @@ class AppMain:
         self.create_timeline()
 
         with gr.Row():
-            self._rewind_1s = gr.Button("Rewind 1 s")
-            self._rewind_5s = gr.Button("Rewind 5 s")
-            self._delete_generation_cache = gr.Button("🗑️")
+            self._add_start_segment = gr.Button("Add start segment", visible=False)
+            self._rewind_1s = gr.Button("Rewind 1 s", visible=False)
+            self._rewind_5s = gr.Button("Rewind 5 s", visible=False)
+            self._delete_generation_cache = gr.Button("🗑️", visible=False)
+
+            def add_start_segment(
+                    lyrics_text:str, 
+                    cache: GenerationCache):
+
+                segments = parse_lyrics(lyrics_text)
+                stage1_length = len(cache.track(0,0))
+
+                if stage1_length < ms_to_tokens(AppMain.MinTimelineBlockMs) or not segments:
+                    return cache
+
+                if len(cache.segments()) > 0:
+                    return cache
+
+                new_cache = copy.deepcopy(cache)
+                new_cache.add_segment(segments[0].name(), 0, stage1_length)
+
+                return new_cache
+
+            self._add_start_segment.click(
+                fn=add_start_segment,
+                inputs=[self._lyrics_text, self._generation_cache],
+                outputs=[self._generation_cache]
+            )
 
             def rewind(time_ms):
                 def inner(generation_cache: GenerationCache):
@@ -834,6 +954,17 @@ class AppMain:
             self._delete_generation_cache.click(
                 fn=lambda: GenerationCache(Song.NrStages),
                 outputs=[self._generation_cache],
+            )
+
+            def show_cache_editing(cache: GenerationCache):
+                has_segments = len(cache.segments()) > 0
+                has_track_data = len(cache.track(0,0)) > 0
+                return gr.update(visible= not has_segments and has_track_data), gr.update(visible=has_segments), gr.update(visible=has_segments), gr.update(visible=has_segments)
+
+            self._generation_cache.change(
+                fn=show_cache_editing,
+                inputs=[self._generation_cache],
+                outputs=[self._add_start_segment, self._rewind_1s, self._rewind_5s, self._delete_generation_cache]
             )
 
         with gr.Tab("General settings"):
@@ -929,8 +1060,6 @@ class AppMain:
         self._generation_progress = gr.Label(label="Generating", show_label=True, visible=False)
 
         self.make_audio_players(AppMain.MaxBatches)
-
-        self._generation_input = gr.State({})
 
         run_generation_event = self._generation_start.click(
             # Save current state

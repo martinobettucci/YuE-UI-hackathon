@@ -35,7 +35,26 @@ class SampleSettings:
             self.guidance_scale = None
         self.repetition_penalty = repetition_penalty
 
+def zero_pad_audio_tracks(*args):
+
+    max_length = 0
+    for audio_data in args:
+        max_length = max(max_length, audio_data.shape[1])
+    
+    tracks = []
+
+    for audio_data in args:
+        length = audio_data.shape[1]
+        if length < max_length:
+            audio_data = torch.nn.functional.pad(audio_data, (0,max_length-length), value=0)
+        tracks.append(audio_data)
+
+    return tracks
+
 def load_audio_mono(filepath, sampling_rate: int = 16000, start_time: int = 0, end_time: int = 0):
+    if not filepath:
+        return torch.zeros(1, 0)
+
     audio, sr = torchaudio.load(filepath)
     # Convert to mono
     audio = torch.mean(audio, dim=0, keepdim=True)
@@ -86,6 +105,7 @@ class Stage1Pipeline:
         parameter_dict = torch.load(self.resume_path, map_location=self.device, weights_only=False)
         self.codec_model.load_state_dict(parameter_dict["codec_model"])
         self.codec_model.eval()
+        del parameter_dict
 
     def get_prompt_texts(self, genres: str, lyrics: str):
         def split_lyrics(lyrics):
@@ -126,7 +146,8 @@ class Stage1Pipeline:
         self.load_codec_model()
         if use_dual_tracks_prompt:
             vocals_ids = load_audio_mono(vocal_track_prompt_path, start_time=prompt_start_time, end_time=prompt_end_time)
-            instrumental_ids = load_audio_mono(instrumental_track_prompt_path, start_time=prompt_start_time, end_time=prompt_end_time)            
+            instrumental_ids = load_audio_mono(instrumental_track_prompt_path, start_time=prompt_start_time, end_time=prompt_end_time)
+            vocals_ids, instrumental_ids = zero_pad_audio_tracks(vocals_ids, instrumental_ids)
             vocals_ids = encode_audio(self.codec_model, vocals_ids, self.device, target_bw=0.5)
             instrumental_ids = encode_audio(self.codec_model, instrumental_ids, self.device, target_bw=0.5)
             vocals_ids = self.codec_tool.npy2ids(vocals_ids[0])
@@ -141,11 +162,11 @@ class Stage1Pipeline:
             del audio_prompt
             del raw_codes
         audio_prompt_codec_ids = [self.mmtokenizer.soa] + self.codec_tool.sep_ids + audio_prompt_codec + [self.mmtokenizer.eoa]
-        sentence_ids = self.mmtokenizer.tokenize("[start_of_reference]") + audio_prompt_codec_ids + self.mmtokenizer.tokenize("[end_of_reference]")        
+        sentence_ids = self.mmtokenizer.tokenize("[start_of_reference]") + audio_prompt_codec_ids + self.mmtokenizer.tokenize("[end_of_reference]")
 
         del self.codec_model
         torch.cuda.empty_cache()
-        gc.collect()        
+        gc.collect()
         return sentence_ids
 
     def get_first_segment_prompt(
