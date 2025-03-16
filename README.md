@@ -12,6 +12,7 @@ The official YuE repo can be found here [multimodal-art-projection/YuE](https://
 - Batch, select & continue
 - Rewind
 - Choose whether to generate Stage 1, 2, 1+2 or preview cache
+- Import vocal & instrumental tracks
 - Visualize generated song segments
 - Control song segment token distribution
 - Mute selected segments to steer generation process and save VRAM
