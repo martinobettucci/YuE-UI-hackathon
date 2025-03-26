@@ -163,5 +163,4 @@ cython_debug/
 
 tmp
 outputs
-models
 xcodec_mini_infer
