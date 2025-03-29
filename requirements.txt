@@ -14,6 +14,7 @@ scipy==1.10.1
 accelerate>=0.26.0
 gradio==5.20.0
 gradio_vistimeline==1.0.1
+pydantic<=2.10.6
 
 # Exl2 official wheels
 exllamav2 @ https://github.com/turboderp-org/exllamav2/releases/download/v0.2.8/exllamav2-0.2.8+cu124.torch2.6.0-cp313-cp313-win_amd64.whl ; platform_system == 'Windows' and python_version == '3.13'
