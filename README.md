@@ -74,7 +74,10 @@ In this city so cold
 ```
 You don't need the lyrics for the entire song from the start, add new lyrics segments as you go. The important thing to keep in mind is that you are always moving forward.\
 Avoid removing earlier segments since this will bring the lyrics out of sync with the already generated song.\
-You can always change lyrics or even rename segments since this won't change the past structure.\
+You can always change lyrics or even rename segments since this won't change the past structure.
+
+https://github.com/user-attachments/assets/a161d135-f14d-43fa-855e-3c4b64c6784a
+
 You can find the above example song in the `examples/` folder.
 
 ## Tips & tricks
