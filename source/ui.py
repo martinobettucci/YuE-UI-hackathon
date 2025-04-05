@@ -277,14 +277,12 @@ class AppMain:
             if track_length == 0:
                 continue
 
-            elem_size = 8 if istage == 1 else 1
-
             timeline_items.append({
                 "content" : stage_names[istage],
                 "group" : AppMain.CacheTimelineGroup,
                 "subgroup": stage_names[istage],
                 "start" : "0",
-                "end" : str(tokens_to_ms(track_length//elem_size)),
+                "end" : str(tokens_to_ms(track_length)),
                 "editable" : False,
                 "selectable": False,
             })
@@ -788,7 +786,7 @@ class AppMain:
         if start_time < 0 or start_time > end_time:
             raise gr.Error(f"Invalid start / end time")
         
-        if len(generation_cache.track(0,0)) != len(generation_cache.track(1,0))//8:
+        if len(generation_cache.track(0,0)) != len(generation_cache.track(1,0)):
             raise gr.Error(f"Error stage 1 & state 2 contents must have equal duration. Generate stage 2 first in order to continue.")
 
         def R(component):

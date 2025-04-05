@@ -279,9 +279,8 @@ class Generator:
             for segment_length in segment_lengths:
                 end_pos = start_pos + segment_length
                 if start_pos != end_pos:
-                    track_segment = track[start_pos*8:end_pos*8].tolist()
-                    tracks[itrack].append(track_segment)
-                    start_pos = end_pos     
+                    tracks[itrack].append(track[start_pos:end_pos])
+                    start_pos = end_pos
 
         return tracks
 
@@ -291,24 +290,22 @@ class Generator:
                  ) -> Song:
 
         stage1_tracks = input.merge_segments(0)
-        stage2_tracks = input.merge_segments(1) if params.resume else [[],[]]
+        stage2_tracks = input.merge_segments(1) if params.resume else [np.empty((0, 8), dtype=np.int64), np.empty((0, 8), dtype=np.int64)]
 
-        cached_tokens = len(stage2_tracks[0]) // 8
+        cached_tokens = len(stage2_tracks[0])
         cached_batches = cached_tokens // 300
+        cached_tokens_end = cached_batches * 300
 
         for itrack in range(2):
+            # Align stage2 to 300 tokens
             track = stage2_tracks[itrack]
-            cached_tokens_end = cached_batches * 300
-
-            # Align stage2 to 300 tokens and restore shape
-            # TODO add continue to last batch tokens, right now we regenerate whole batch
-            track = track[:cached_tokens_end * 8]
-            stage2_tracks[itrack] = np.array(track)
+            track = track[:cached_tokens_end]
+            stage2_tracks[itrack] = track
 
             # Remove already generated tokens
             track = stage1_tracks[itrack]
             track = track[cached_tokens_end:]
-            stage1_tracks[itrack] = track
+            stage1_tracks[itrack] = track.squeeze().tolist()
 
         outputs = self._stage2_pipeline.generate(generation_token=params.token, stage1_tracks=stage1_tracks, stage2_tracks=stage2_tracks)
 
@@ -339,7 +336,7 @@ class Generator:
         else:
             max_duration = 0
 
-        tracks = [encoder[stage_idx](track[-max_duration:]) for track in input.merge_segments(stage_idx)]
+        tracks = [encoder[stage_idx](track[-max_duration:].flatten().tolist()) for track in input.merge_segments(stage_idx)]
         return self._post_process.generate(input = tracks, output_name = output_name, params = params)
 
     def set_seed(self, seed: int):
@@ -375,8 +372,8 @@ def import_audio_tracks(
             vocals_ids = encode_audio(codec_model, vocal_audio_data, device, target_bw=bw)
             instrumental_ids = encode_audio(codec_model, instrumental_audio_data, device, target_bw=bw)
             
-            vocals_ids = encoder.npy2ids(vocals_ids[0])
-            instrumental_ids = encoder.npy2ids(instrumental_ids[0])
+            vocals_ids = np.array(encoder.npy2ids(vocals_ids[0]),dtype=np.int64).reshape(-1, encoder.n_quantizer)
+            instrumental_ids = np.array(encoder.npy2ids(instrumental_ids[0]), dtype=np.int64).reshape(-1, encoder.n_quantizer)
 
             stages.append((vocals_ids, instrumental_ids))
 

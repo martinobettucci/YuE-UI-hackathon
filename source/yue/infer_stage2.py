@@ -81,7 +81,7 @@ class Stage2Pipeline_EXL2(Stage2Pipeline):
     def generate(self,
                  generation_token: Callable[[],bool],
                  stage1_tracks: list[list[int], list[int]],
-                 stage2_tracks: list[list[int], list[int]],
+                 stage2_tracks: list[np.array, np.array],
                  ) -> list[np.array]:
 
         full_batch = []
@@ -99,7 +99,12 @@ class Stage2Pipeline_EXL2(Stage2Pipeline):
         suffix = torch.tensor([[self.mmtokenizer.stage_2]], dtype=torch.long)
         for i in range(len(full_batch)):
             seg_len, seg_idx, output_idx, codec_ids = full_batch[i]
-            prompt_ids = torch.cat((prefix, codec_ids, suffix), dim=-1)
+
+            # Add silence padding to ensure 300 tokens otherwise the audio quality will degrade on a short batch
+            silence_padding_len = 300 - seg_len
+            silence_padding = torch.tensor([[45798] * silence_padding_len], dtype=torch.long)
+
+            prompt_ids = torch.cat((prefix, codec_ids, silence_padding, suffix), dim=-1)
             full_batch[i] = (seg_len, seg_idx, output_idx, codec_ids, prompt_ids)
 
         # Group prompts by length
@@ -187,11 +192,11 @@ class Stage2Pipeline_EXL2(Stage2Pipeline):
         output_tracks = []
         for i, p in enumerate(output_parts):
             p = sorted(p, key=lambda x: x[0])
-            part_o = torch.cat([pp[1] for pp in p], dim=-1).flatten().cpu().numpy()
+            part_o = torch.reshape(torch.cat([pp[1] for pp in p], dim=-1), (-1, 8)).cpu().numpy()
             # Add cached tokens
             output = stage2_tracks[i]
             if part_o.shape[0] > 0:
-                output = np.concatenate((output, part_o.tolist()))
+                output = np.concatenate((output, part_o))
             output_tracks.append(output)
 
         return output_tracks

@@ -249,7 +249,7 @@ class Stage1Pipeline:
             codec_ids = ids[soa_idx[i] + 1 + sep_len: eoa_idx[i]]
             codec_ids = codec_ids[: 2 * (codec_ids.shape[0] // 2)]
             tracks = rearrange(codec_ids, "(n b) -> b n", b=2)
-            segments.append(tracks.tolist())
+            segments.append([np.expand_dims(track, axis=1) for track in tracks])
 
         return segments
 

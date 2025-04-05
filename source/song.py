@@ -50,7 +50,7 @@ class SongSegment:
         self._tracks = SongSegment.create_empty_tracks()
 
     def create_empty_tracks():
-        return [[[] for _ in range(Song.NrTracks)] for _ in range(Song.NrStages)]
+        return [[np.empty((0, 8 if istage == 1 else 1), dtype=np.int64) for _ in range(Song.NrTracks)] for istage in range(Song.NrStages)]
 
     def create(idx, name, tags, lyrics):
         segment = SongSegment()
@@ -90,14 +90,13 @@ class SongSegment:
     def merge(self, other):
         self._tracks = copy.deepcopy(other._tracks)
 
-    def merged_stage1_tracks(self):
+    def merged_stage1_tracks(self)->list[int]:
         """
         Interleave stage 1 track data [V V V] [I I I] -> [V I V I V I]
         """
-        codec_ids = np.array([track for track in self._tracks[0]])
+        codec_ids = np.array([track.squeeze() for track in self._tracks[0]])
         codec_ids = rearrange(codec_ids, "b n -> (n b)", b=Song.NrTracks)
-        codec_ids = codec_ids.tolist()
-        return codec_ids
+        return codec_ids.tolist()
 
 class Song():
     NrStages = 2
@@ -205,10 +204,11 @@ class Song():
 
     def merge_segments(self, istage):
         tracks = []
+        elem_size = 8 if istage == 1 else 1
         for itrack in range(Song.NrTracks):
-            track_full = []
+            track_full = np.empty((0,elem_size), dtype=np.int64)
             for segment in self._segments:
-                track_full = track_full + segment.track(istage, itrack)
+                track_full = np.concatenate((track_full, segment.track(istage, itrack)))
             tracks.append(track_full)
         return tracks
 
@@ -285,7 +285,7 @@ class GenerationCache:
                 if itrack >= len(self._tracks[istage]):
                     self._tracks[istage].append(track)
                 else:
-                    self._tracks[istage][itrack] = self._tracks[istage][itrack] + track
+                    self._tracks[istage][itrack] = np.concatenate((self._tracks[istage][itrack], track))
 
     def rewind(self, timems: int):
         iseg = len(self._segments) - 1
@@ -324,15 +324,11 @@ class GenerationCache:
     def transfer_to_song(self, song: Song):
         nr_segments = len(song)
         for isegment, segment in enumerate(self._segments):
-            _, start_token, end_token = segment
+            _, start_pos, end_pos = segment
             if isegment < nr_segments:
                 for istage in range(Song.NrStages):
                     for itrack in range(Song.NrTracks):
                         track = self.track(istage, itrack) 
-
-                        elem_size = 8 if istage == 1 else 1
-                        start_pos = start_token * elem_size
-                        end_pos = end_token * elem_size
 
                         if start_pos > len(track) or len(track) == 0:
                             continue
@@ -345,12 +341,27 @@ class GenerationCache:
 
     def save(self):
         data = dict()
-        data["tracks"] = copy.deepcopy(self._tracks)
+        stage_tracks = []
+        for stage in self._tracks:
+            tracks = []
+            for track in stage:
+                tracks.append(track.flatten().tolist())
+            stage_tracks.append(tracks)
+        data["tracks"] = stage_tracks
         data["segments"] = copy.deepcopy(self._segments)
         data["muted_segments"] = list(self._muted_segments)
         return data
 
     def load(self, data):
-        self._tracks = data.get("tracks", self._tracks)
+        stage_tracks = data.get("tracks", self._tracks)
+        self._tracks = []
+        for istage, stage in enumerate(stage_tracks):
+            tracks = []
+            elem_size = 8 if istage == 1 else 1
+            for track in stage:
+                nr_elements = (len(track) // elem_size)
+                aligned_size = nr_elements * elem_size
+                tracks.append(np.array(track[:aligned_size], dtype=np.int64).reshape((nr_elements, elem_size)))
+            self._tracks.append(tracks)
         self._segments = data.get("segments", self._segments)
         self._muted_segments = set(data.get("muted_segments", self._muted_segments))
