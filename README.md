@@ -97,8 +97,6 @@ If you only like the start of a clip, fear not, you can still accept it and move
 
 Stage 1 is great for generating drafts since it's much faster than 1+2, although much lower quality. But remember to run stage 2 now and then to avoid surprises in the end 😁
 
-The stage 2 refiner works in block of 6 seconds. The last section of the song might sound a bit off if the song length isn't exactly divisible by 6.
-
 It's recommended to always use the dual track mode when working with audio prompts for best quality. You can substitute vocal or instrumental with a silence track if necessary.
 If you need to split stems you can use a tool such as [deezer/spleeter](https://github.com/deezer/spleeter) to separate the vocal & instrumental tracks.
 
