@@ -61,6 +61,7 @@ Both scripts accept optional arguments to configure queue behavior:
 ```
 `--concurrent_run` specifies how many requests run in parallel before queuing begins.
 `--max_queue` defines the maximum queue size. When the limit is reached new requests are rejected with a message inviting you to try later.
+The defaults are 4 concurrent runs and a queue limit of 16, so passing no options uses these values.
 
 After starting the gradio server open http://127.0.0.1:7860 in your browser to access the UI.
 
