@@ -9,6 +9,7 @@ import json
 import os
 import random
 from tempfile import NamedTemporaryFile
+import re
 
 from infer import GenerationToken, GenerationParams, Generator, Stage1Config, Stage2Config, import_audio_tracks
 from song import Song, GenerationCache, parse_lyrics
@@ -1333,7 +1334,16 @@ class AppMain:
                               stage2_config=stage2_config)
 
         song = Song()
-        song.set_lyrics(R(self._lyrics_text))
+
+        lyrics_text = R(self._lyrics_text)
+        if not re.search(r"\[(?:verse|chorus)\]", lyrics_text, re.IGNORECASE):
+            token.stop_generation()
+            raise gr.Error(
+                "Lyrics must contain at least one [verse] or [chorus] tag. "
+                "Please structure your prompt like:\n[verse]\nYour lyrics here"
+            )
+
+        song.set_lyrics(lyrics_text)
 
         genre_text = " ".join(R(self._genre_selection))
         song.set_genre(genre_text)
