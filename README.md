@@ -54,7 +54,7 @@ Run `start_windows.bat` to start the gradio server
 Linux:\
 Run `./start_linux.sh` to start the gradio server
 
-Both scripts accept optional arguments to configure queue behaviour:
+Both scripts accept optional arguments to configure queue behavior:
 
 ```bash
 ./start_linux.sh --concurrent_run 4 --max_queue 16
