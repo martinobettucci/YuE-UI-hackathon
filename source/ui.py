@@ -177,6 +177,7 @@ class AppMain:
         self._interface = self.create_interface()
         self._interface.queue(
             default_concurrency_limit=self._concurrent_run,
+            concurrency_count=self._concurrent_run,
             max_size=self._max_queue,
             status_update_rate=1,
         )
