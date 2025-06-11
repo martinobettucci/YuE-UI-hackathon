@@ -204,8 +204,14 @@ class Stage1Pipeline:
         ids = raw_output[0].cpu().numpy()
         soa_idx = np.where(ids == self.mmtokenizer.soa)[0].tolist()
         eoa_idx = np.where(ids == self.mmtokenizer.eoa)[0].tolist()
-        if len(soa_idx) != len(eoa_idx):
-            raise ValueError(f"invalid pairs of soa and eoa, Num of soa: {len(soa_idx)}, Num of eoa: {len(eoa_idx)}")
+
+        # Sometimes context truncation can lead to unmatched soa/eoa tokens.
+        # Drop any leading EOAs and truncate trailing SOAs so that pairs match.
+        while soa_idx and eoa_idx and eoa_idx[0] < soa_idx[0]:
+            eoa_idx.pop(0)
+        pair_len = min(len(soa_idx), len(eoa_idx))
+        soa_idx = soa_idx[:pair_len]
+        eoa_idx = eoa_idx[:pair_len]
 
         vocals = []
         instrumentals = []
@@ -237,8 +243,13 @@ class Stage1Pipeline:
 
         soa_idx = np.where(ids == self.mmtokenizer.soa)[0].tolist()
         eoa_idx = np.where(ids == self.mmtokenizer.eoa)[0].tolist()
-        if len(soa_idx) != len(eoa_idx):
-            raise ValueError(f"invalid pairs of soa and eoa, Num of soa: {len(soa_idx)}, Num of eoa: {len(eoa_idx)}")
+
+        # Drop unmatched leading EOAs and trim trailing SOAs
+        while soa_idx and eoa_idx and eoa_idx[0] < soa_idx[0]:
+            eoa_idx.pop(0)
+        pair_len = min(len(soa_idx), len(eoa_idx))
+        soa_idx = soa_idx[:pair_len]
+        eoa_idx = eoa_idx[:pair_len]
 
         range_begin = 1 if skip_first_block else 0
         sep_len = len(self.codec_tool.sep_ids)
