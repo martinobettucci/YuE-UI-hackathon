@@ -371,7 +371,7 @@ class Stage1Pipeline_EXL2(Stage1Pipeline):
                 mask_len = full_ids.shape[-1] - 1
                 full_mask = torch.zeros((2, cache.max_seq_len), dtype=torch.half, device=self.device)
                 full_mask[1, :mask_len] = -65504.0
-                position_offsets = torch.tensor([[0], [-mask_len]], dtype=torch.int)
+                position_offsets = torch.tensor([[0], [-mask_len]], dtype=torch.int, device=self.device)
                 input_mask = full_mask[:, : full_ids.shape[-1]]
 
             # Forward prompt
@@ -403,7 +403,13 @@ class Stage1Pipeline_EXL2(Stage1Pipeline):
                 # Get next logits (update cache even if sample is EOA and we don't need next logits)
                 if cfg:
                     input_mask = full_mask[:, : full_ids.shape[-1]]
-                logits = self.model.forward(sample, cache=cache, input_mask=input_mask, position_offsets=position_offsets)
+                logits = self.model.forward(
+                    sample,
+                    cache=cache,
+                    input_mask=input_mask,
+                    position_offsets=position_offsets,
+                    last_id_only=True,
+                )
 
                 progress.update()
 
