@@ -565,7 +565,8 @@ class AppMain:
                 choices=stage1_choices,
                 value=default_stage1_model,
                 info="Select the checkpoint path for the Stage 1 model.",
-                interactive=True
+                interactive=True,
+                allow_custom_value=True
             ))
 
             self._stage1_model_cache_mode = self.S("stage1_model_cache_mode", gr.Dropdown(
@@ -587,7 +588,8 @@ class AppMain:
                 choices=stage2_choices,
                 value=default_stage2_model,
                 info="Select the checkpoint path for the Stage 2 model.",
-                interactive=True
+                interactive=True,
+                allow_custom_value=True
             ))
 
             self._stage2_model_cache_mode = self.S("stage2_model_cache_mode", gr.Dropdown(
