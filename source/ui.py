@@ -422,21 +422,30 @@ class AppMain:
             gr.Markdown("# YuE - UI")
 
             self.create_states()
-            
-            with gr.Row():
-                with gr.Column():
-                    with gr.Tab("Prompt"):
-                        self.create_prompt_tab()
-                    with gr.Tab("Model"):
-                        self.create_model_tab()
 
-                with gr.Column():
-                    with gr.Tab("Generation"):
-                        self.create_generation_tab()
-                    with gr.Tab("Import"):
-                        self.create_import_tab()
+            with gr.Tabs() as tabs:
+                with gr.TabItem("Simple"):
+                    self.create_simple_tab()
+                with gr.TabItem("Advanced"):
+                    with gr.Row():
+                        with gr.Column():
+                            with gr.Tab("Prompt"):
+                                self.create_prompt_tab()
+                            with gr.Tab("Model"):
+                                self.create_model_tab()
 
-            self.create_sidebar()
+                        with gr.Column():
+                            with gr.Tab("Generation"):
+                                self.create_generation_tab()
+                            with gr.Tab("Import"):
+                                self.create_import_tab()
+
+                    self.create_sidebar()
+
+            # Audio output for simple tab
+            self._simple_audio
+
+            self.create_simple_events()
 
         return interface
 
@@ -858,7 +867,7 @@ class AppMain:
         )
 
     def create_generation_tab(self):
-
+        
         with gr.Row():
             with gr.Column(scale=3):
                 self._generation_stage_mode = self.S("generation_stage_mode", gr.Radio(
@@ -1059,7 +1068,7 @@ class AppMain:
 
         self.make_audio_players(AppMain.MaxBatches)
 
-        run_generation_event = self._generation_start.click(
+        self._run_generation_event = self._generation_start.click(
             # Save current state
             fn=self.save_state,
             inputs=self.serialized_components(),
@@ -1098,7 +1107,7 @@ class AppMain:
         self._generation_stop.click(
             fn=self.stop_generate,
             inputs=[self._generation_token],
-            cancels=[run_generation_event]
+            cancels=[self._run_generation_event]
         ).then(
             outputs = [self._generation_token]
         )
@@ -1451,6 +1460,53 @@ class AppMain:
     def stop_generate(self, token):
         if token:
             token.stop_generation(False, "Cancelled")
+
+    def create_simple_tab(self):
+        self._simple_prompt = gr.Textbox(label="Lyrics", lines=4)
+        self._simple_submit = gr.Button("Submit")
+        self._simple_audio = gr.Audio(label="Generated song", visible=False)
+
+    def update_simple_audio(self, outputs):
+        if outputs:
+            return gr.update(value=outputs[0][0], visible=True)
+        return gr.update(visible=False)
+
+    def create_simple_events(self):
+        simple_run_event = self._simple_submit.click(
+            lambda text: text,
+            inputs=[self._simple_prompt],
+            outputs=[self._lyrics_text]
+        ).then(
+            fn=self.save_state,
+            inputs=self.serialized_components(),
+            outputs=self._generation_input
+        ).then(
+            fn=self.hide_players,
+            inputs=None,
+            outputs=[player.column for player in self._players]
+        ).then(
+            fn=lambda: (GenerationToken(), gr.Button(interactive=False), gr.Button(interactive=True), gr.Label(visible=True)),
+            inputs=None,
+            outputs=[self._generation_token, self._generation_start, self._generation_stop, self._generation_progress]
+        ).then(
+            fn=self.run_generate,
+            inputs=[self._generation_token, self._generation_input],
+            outputs=[self._generation_progress, self._generation_outputs]
+        ).then(
+            fn=lambda: (None, gr.Button(interactive=True), gr.Button(interactive=False), gr.Label(visible=False)),
+            outputs=[self._generation_token, self._generation_start, self._generation_stop, self._generation_progress]
+        )
+
+        self._generation_outputs.change(
+            fn=self.update_simple_audio,
+            inputs=[self._generation_outputs],
+            outputs=[self._simple_audio]
+        )
+
+        self._generation_stop.click(
+            None,
+            cancels=[simple_run_event]
+        )
 
     def launch(self):
         self._interface.launch(server_name=self._server_name, server_port=self._server_port, allowed_paths=self._allowed_paths)
