@@ -54,6 +54,14 @@ Run `start_windows.bat` to start the gradio server
 Linux:\
 Run `./start_linux.sh` to start the gradio server
 
+Both scripts accept optional arguments to configure queue behavior:
+
+```bash
+./start_linux.sh --concurrent_run 4 --max_queue 16
+```
+`--concurrent_run` specifies how many requests run in parallel before queuing begins.
+`--max_queue` defines the maximum queue size. When the limit is reached new requests are rejected with a message inviting you to try later.
+
 After starting the gradio server open http://127.0.0.1:7860 in your browser to access the UI.
 
 ## Generating music
