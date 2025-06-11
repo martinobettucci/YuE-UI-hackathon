@@ -176,7 +176,7 @@ class AppMain:
         self._component_serializers = {}
         self._interface = self.create_interface()
         self._interface.queue(
-            concurrency_count=self._concurrent_run,
+            default_concurrency_limit=self._concurrent_run,
             max_size=self._max_queue,
             status_update_rate=1,
         )
