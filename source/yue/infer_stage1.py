@@ -337,6 +337,13 @@ class Stage1Pipeline_EXL2(Stage1Pipeline):
 
         # Prepare start context
         start_context = torch.tensor([start_context] * bsz, dtype=torch.long)
+        if start_context.shape[-1] > self.cache_size:
+            print(
+                f"Start context length {start_context.shape[-1]} exceeds cache "
+                f"size {self.cache_size}, trimming context."
+            )
+            start_context = self.shorten_input(start_context, self.cache_size)
+
         seq = torch.cat((seq, start_context), dim=-1)
 
         nr_generated = 0
