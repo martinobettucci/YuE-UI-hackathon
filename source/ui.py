@@ -148,7 +148,7 @@ class AppMain:
     DefaultStage1CacheMode: str = "Q4"
 
     DefaultStage2Model: str = "YuE-s2-1B-general-exl2"
-    DefaultStage2CacheMode: str = "FP16"
+    DefaultStage2CacheMode: str = "Q4"
 
     def __init__(self,
                  server_name: str = "127.0.0.1",
