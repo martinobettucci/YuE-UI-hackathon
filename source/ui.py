@@ -423,6 +423,8 @@ class AppMain:
 
             self.create_states()
 
+            self._generation_progress = gr.Label(label="Generating", show_label=True, visible=False)
+
             with gr.Tabs() as tabs:
                 with gr.TabItem("Simple"):
                     self.create_simple_tab()
@@ -441,6 +443,8 @@ class AppMain:
                                 self.create_import_tab()
 
                     self.create_sidebar()
+
+            self._generation_progress
 
             # Audio output for simple tab
             self._simple_audio
@@ -1064,7 +1068,7 @@ class AppMain:
             self._generation_start = gr.Button("Submit")
             self._generation_stop = gr.Button("Stop", interactive=True)
 
-        self._generation_progress = gr.Label(label="Generating", show_label=True, visible=False)
+        # Audio generation progress label is displayed outside the tabs
 
         self.make_audio_players(AppMain.MaxBatches)
 
@@ -1462,20 +1466,34 @@ class AppMain:
             token.stop_generation(False, "Cancelled")
 
     def create_simple_tab(self):
+        genres = load_and_process_genres(os.path.join(self._working_directory, "top_200_tags.json"))
+        self._simple_genre_selection = gr.Dropdown(
+            label="Select Music Genres",
+            info="Select genre tags that describe the musical style or characteristics (e.g., instrumental, genre, mood, vocal timbre, vocal gender). This is used as part of the generation prompt.",
+            choices=genres,
+            multiselect=True,
+            allow_custom_value=True,
+            max_choices=50,
+        )
         self._simple_prompt = gr.Textbox(label="Lyrics", lines=4)
         self._simple_submit = gr.Button("Submit")
         self._simple_audio = gr.Audio(label="Generated song", visible=False)
 
     def update_simple_audio(self, outputs):
         if outputs:
-            return gr.update(value=outputs[0][0], visible=True)
-        return gr.update(visible=False)
+            file, cache, state = outputs[0]
+            return (
+                gr.update(value=file, visible=True),
+                cache,
+                state.get("generation_seed")
+            )
+        return gr.update(visible=False), gr.skip(), gr.skip()
 
     def create_simple_events(self):
         simple_run_event = self._simple_submit.click(
-            lambda text: text,
-            inputs=[self._simple_prompt],
-            outputs=[self._lyrics_text]
+            lambda text, genres: (text, genres),
+            inputs=[self._simple_prompt, self._simple_genre_selection],
+            outputs=[self._lyrics_text, self._genre_selection]
         ).then(
             fn=self.save_state,
             inputs=self.serialized_components(),
@@ -1500,7 +1518,13 @@ class AppMain:
         self._generation_outputs.change(
             fn=self.update_simple_audio,
             inputs=[self._generation_outputs],
-            outputs=[self._simple_audio]
+            outputs=[self._simple_audio, self._generation_cache, self._generation_seed]
+        )
+
+        self._genre_selection.change(
+            lambda x: x,
+            inputs=[self._genre_selection],
+            outputs=[self._simple_genre_selection]
         )
 
         self._generation_stop.click(
