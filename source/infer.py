@@ -30,7 +30,7 @@ class Stage1Config:
 class Stage2Config:
     model_path: str = "models/YuE-s2-1B-general-exl2"
     cache_size: int = 7500
-    cache_mode: str = "FP16"
+    cache_mode: str = "Q4"
 
 @dataclass
 class PostProcessConfig:

@@ -148,7 +148,7 @@ class AppMain:
     DefaultStage1CacheMode: str = "Q4"
 
     DefaultStage2Model: str = "YuE-s2-1B-general-exl2"
-    DefaultStage2CacheMode: str = "FP16"
+    DefaultStage2CacheMode: str = "Q4"
 
     def __init__(self,
                  server_name: str = "127.0.0.1",
@@ -177,6 +177,7 @@ class AppMain:
         self._interface = self.create_interface()
         self._interface.queue(
             default_concurrency_limit=self._concurrent_run,
+            concurrency_count=self._concurrent_run,
             max_size=self._max_queue,
             status_update_rate=1,
         )
@@ -428,8 +429,8 @@ class AppMain:
         <script type="module" src="/gradio_api/file=scripts/utils.js"></script>
         """
 
-        with gr.Blocks(head=head, css=css, title="YuE - UI", theme=theme) as interface:
-            gr.Markdown("# YuE - UI")
+        with gr.Blocks(head=head, css=css, title="Hackathon Music Generator", theme=theme) as interface:
+            gr.Markdown("# Hackathon Music Generator")
 
             self.create_states()
 
