@@ -428,8 +428,8 @@ class AppMain:
         <script type="module" src="/gradio_api/file=scripts/utils.js"></script>
         """
 
-        with gr.Blocks(head=head, css=css, title="YuE - UI", theme=theme) as interface:
-            gr.Markdown("# YuE - UI")
+        with gr.Blocks(head=head, css=css, title="Hackathon Music Generator", theme=theme) as interface:
+            gr.Markdown("# Hackathon Music Generator")
 
             self.create_states()
 
