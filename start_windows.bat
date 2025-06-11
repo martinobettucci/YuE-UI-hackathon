@@ -1,2 +1,2 @@
 call ./venv/scripts/activate
-python source/ui.py
+python source/ui.py %*
