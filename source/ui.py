@@ -154,11 +154,15 @@ class AppMain:
                  server_name: str = "127.0.0.1",
                  server_port: int = 7860,
                  working_directory: str = "",
+                 concurrent_run: int = 4,
+                 max_queue: int = 16,
                  ):
         
         self._server_name = server_name
         self._server_port = server_port
         self._working_directory = working_directory
+        self._concurrent_run = concurrent_run
+        self._max_queue = max_queue
 
         os.environ["GRADIO_TEMP_DIR"] = os.path.abspath(os.path.join(self._working_directory, "tmp"))
 
@@ -171,6 +175,11 @@ class AppMain:
 
         self._component_serializers = {}
         self._interface = self.create_interface()
+        self._interface.queue(
+            concurrency_count=self._concurrent_run,
+            max_size=self._max_queue,
+            status_update_rate=1,
+        )
 
     def save_state(self, *args):
         output = {}
@@ -1549,6 +1558,11 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--server_name", type=str, default="127.0.0.1", help="The address to host YuE-UI gradio interface on")
     parser.add_argument("--server_port", type=int, default=7860, help="The port to host YuE-UI gradio interface on")
+    parser.add_argument("--concurrent_run", type=int, default=4, help="Number of concurrent runs before queuing")
+    parser.add_argument("--max_queue", type=int, default=16, help="Maximum queue size")
     args = parser.parse_args()
-    app = AppMain(server_name=args.server_name, server_port=args.server_port)
+    app = AppMain(server_name=args.server_name,
+                  server_port=args.server_port,
+                  concurrent_run=args.concurrent_run,
+                  max_queue=args.max_queue)
     app.launch()
