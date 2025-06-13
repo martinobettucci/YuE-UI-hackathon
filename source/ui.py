@@ -491,10 +491,12 @@ class AppMain:
                 label="Select Music Genres",
                 info="Select genre tags that describe the musical style or characteristics (e.g., instrumental, genre, mood, vocal timbre, vocal gender). This is used as part of the generation prompt.",
                 choices=genres,
+                value=["8-bit"],
                 interactive=True,
                 multiselect=True,
                 allow_custom_value=True,
-                max_choices=50
+                max_choices=50,
+                visible=False
             ))
 
             self._lyrics_text = self.S("lyrics_text", gr.Textbox(
@@ -502,7 +504,8 @@ class AppMain:
                 lines=4,
                 placeholder="Type the lyrics here...",
                 info="Text containing the lyrics for the music generation. These lyrics will be processed and split into structured segments to guide the generation process.",
-                value=""
+                value="[verse]\nI love AI hackathons",
+                visible=False
             ))
 
             self._default_segment_length = self.S("default_segment_length", gr.Number(
@@ -1496,11 +1499,12 @@ class AppMain:
             label="Select Music Genres",
             info="Select genre tags that describe the musical style or characteristics (e.g., instrumental, genre, mood, vocal timbre, vocal gender). This is used as part of the generation prompt.",
             choices=genres,
+            value=["8-bit"],
             multiselect=True,
             allow_custom_value=True,
             max_choices=50,
         )
-        self._simple_prompt = gr.Textbox(label="Lyrics", lines=4)
+        self._simple_prompt = gr.Textbox(label="Lyrics", lines=4, value="[verse]\nI love AI hackathons")
         self._simple_submit = gr.Button("Submit")
         self._simple_audio = gr.Audio(label="Generated song", visible=False)
 
@@ -1546,10 +1550,16 @@ class AppMain:
             outputs=[self._simple_audio, self._generation_cache, self._generation_seed]
         )
 
-        self._genre_selection.change(
+        self._simple_genre_selection.change(
             lambda x: x,
-            inputs=[self._genre_selection],
-            outputs=[self._simple_genre_selection]
+            inputs=[self._simple_genre_selection],
+            outputs=[self._genre_selection]
+        )
+
+        self._simple_prompt.change(
+            lambda x: x,
+            inputs=[self._simple_prompt],
+            outputs=[self._lyrics_text]
         )
 
         self._generation_stop.click(
