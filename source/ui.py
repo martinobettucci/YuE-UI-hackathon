@@ -1022,13 +1022,17 @@ class AppMain:
             ))
 
             # Show/hide length based on mode
-            def update_mode_settings(mode):
+            def update_mode_settings(mode, cache: GenerationCache):
                 if mode == GenerationMode.Continue.name:
-                    return gr.Slider(visible=True)
+                    return gr.Slider(visible=True), cache
                 else:
-                    return gr.Slider(visible=False)
+                    return gr.Slider(visible=False), GenerationCache(Song.NrStages)
 
-            self._generation_mode.select(fn=update_mode_settings, inputs=[self._generation_mode], outputs=[self._generation_length])
+            self._generation_mode.select(
+                fn=update_mode_settings,
+                inputs=[self._generation_mode, self._generation_cache],
+                outputs=[self._generation_length, self._generation_cache],
+            )
 
             self._generation_batches = self.S("generation_batches", gr.Slider(
                 label="Batches",
