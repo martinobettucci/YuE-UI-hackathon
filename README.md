@@ -61,6 +61,11 @@ Both scripts accept optional arguments to configure queue behaviour:
 ```
 `--concurrent_run` specifies how many requests run in parallel before queuing begins.
 `--max_queue` defines the maximum queue size. When the limit is reached new requests are rejected with a message inviting you to try later.
+You can also specify a root path when running behind a reverse proxy:
+```bash
+./start_linux.sh --root_path /music
+```
+
 
 After starting the gradio server open http://127.0.0.1:7860 in your browser to access the UI.
 
