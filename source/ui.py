@@ -470,7 +470,6 @@ class AppMain:
         self._generation_input = gr.State({})
         self._generation_outputs = gr.State()
         self._selected_timeline_items = gr.State([])
-        self._generation_source = gr.State("simple")
 
         def load_cache(cache_data):
             cache = GenerationCache(Song.NrStages)
@@ -1108,10 +1107,6 @@ class AppMain:
             inputs = None,
             outputs = [self._generation_token, self._generation_start,self._generation_stop, self._generation_progress]
         ).then(
-            fn=lambda: "advanced",
-            inputs=None,
-            outputs=[self._generation_source]
-        ).then(
             # Generate
             fn=self.run_generate,
             inputs=[
@@ -1126,9 +1121,9 @@ class AppMain:
         )
 
         self._generation_outputs.change(
-            # Show players when using advanced mode
+            # Show players
             fn=self.update_players,
-            inputs=[self._generation_outputs, self._generation_source],
+            inputs=[self._generation_outputs],
             outputs=[elem for player in self._players for elem in (player.column, player.accept_button, player.reject_button, player.audio_file)],
         )
 
@@ -1267,10 +1262,10 @@ class AppMain:
     def hide_players(self):
         return [gr.update(visible=False) for _,_ in enumerate(self._players)]
 
-    def update_players(self, generated_final_outputs, source):
+    def update_players(self, generated_final_outputs):
         outputs = []
         for iplayer,_ in enumerate(self._players):
-            visible = generated_final_outputs and source == "advanced" and iplayer < len(generated_final_outputs)
+            visible = generated_final_outputs and iplayer < len(generated_final_outputs)
             outputs.append(gr.update(visible=visible))
             outputs.append(gr.update(visible=visible))
             outputs.append(gr.update(visible=visible))
@@ -1513,8 +1508,8 @@ class AppMain:
         self._simple_submit = gr.Button("Submit")
         self._simple_audio = gr.Audio(label="Generated song", visible=False)
 
-    def update_simple_audio(self, outputs, source):
-        if outputs and source == "simple":
+    def update_simple_audio(self, outputs):
+        if outputs:
             file, cache, state = outputs[0]
             return (
                 gr.update(value=file, visible=True),
@@ -1541,10 +1536,6 @@ class AppMain:
             inputs=None,
             outputs=[self._generation_token, self._generation_start, self._generation_stop, self._generation_progress]
         ).then(
-            fn=lambda: "simple",
-            inputs=None,
-            outputs=[self._generation_source]
-        ).then(
             fn=self.run_generate,
             inputs=[self._generation_token, self._generation_input],
             outputs=[self._generation_progress, self._generation_outputs]
@@ -1555,7 +1546,7 @@ class AppMain:
 
         self._generation_outputs.change(
             fn=self.update_simple_audio,
-            inputs=[self._generation_outputs, self._generation_source],
+            inputs=[self._generation_outputs],
             outputs=[self._simple_audio, self._generation_cache, self._generation_seed]
         )
 
