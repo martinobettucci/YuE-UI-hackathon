@@ -156,6 +156,7 @@ class AppMain:
                  working_directory: str = "",
                  concurrent_run: int = 4,
                  max_queue: int = 16,
+                 root_path: str | None = None,
                  ):
         
         self._server_name = server_name
@@ -163,6 +164,7 @@ class AppMain:
         self._working_directory = working_directory
         self._concurrent_run = concurrent_run
         self._max_queue = max_queue
+        self._root_path = root_path
 
         os.environ["GRADIO_TEMP_DIR"] = os.path.abspath(os.path.join(self._working_directory, "tmp"))
 
@@ -1552,7 +1554,12 @@ class AppMain:
         )
 
     def launch(self):
-        self._interface.launch(server_name=self._server_name, server_port=self._server_port, allowed_paths=self._allowed_paths)
+        self._interface.launch(
+            server_name=self._server_name,
+            server_port=self._server_port,
+            allowed_paths=self._allowed_paths,
+            root_path=self._root_path,
+        )
 
 if __name__ == "__main__":
     parser = ArgumentParser()
@@ -1560,9 +1567,11 @@ if __name__ == "__main__":
     parser.add_argument("--server_port", type=int, default=7860, help="The port to host YuE-UI gradio interface on")
     parser.add_argument("--concurrent_run", type=int, default=4, help="Number of concurrent runs before queuing")
     parser.add_argument("--max_queue", type=int, default=16, help="Maximum queue size")
+    parser.add_argument("--root_path", type=str, default="", help="Root path for running behind a proxy, e.g. /music")
     args = parser.parse_args()
     app = AppMain(server_name=args.server_name,
                   server_port=args.server_port,
                   concurrent_run=args.concurrent_run,
-                  max_queue=args.max_queue)
+                  max_queue=args.max_queue,
+                  root_path=args.root_path if args.root_path else None)
     app.launch()
