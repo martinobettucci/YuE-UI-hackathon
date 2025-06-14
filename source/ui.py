@@ -163,6 +163,8 @@ class AppMain:
     DefaultStage2Model: str = "YuE-s2-1B-general-exl2"
     DefaultStage2CacheMode: str = "Q4"
 
+    DefaultConfigFile: str = "default_config.json"
+
     def __init__(self,
                  server_name: str = "127.0.0.1",
                  server_port: int = 7860,
@@ -182,18 +184,32 @@ class AppMain:
         os.environ["GRADIO_TEMP_DIR"] = os.path.abspath(os.path.join(self._working_directory, "tmp"))
 
         self._allowed_paths = [os.path.abspath(os.path.join(self._working_directory, path)) for path in AppMain.AllowedPaths]
-        
+
         self._output_dir = os.path.join(self._working_directory, "outputs")
         self._model_dir = os.path.join(self._working_directory, "models")
+        self._default_config_path = os.path.join(self._working_directory, AppMain.DefaultConfigFile)
 
         gr.set_static_paths(paths=["icons", "scripts"])
 
         self._component_serializers = {}
         self._interface = self.create_interface()
+        # Load defaults at server start
+        initial_state = self.load_default_config()
+        for comp, val in zip(self.serialized_components(), initial_state):
+            if val is not gr.skip():
+                comp.value = val
+
         self._interface.queue(
             default_concurrency_limit=self._concurrent_run,
             max_size=self._max_queue,
             status_update_rate=1,
+        )
+
+        # Ensure defaults are applied on every page refresh
+        self._interface.load(
+            fn=self.load_default_config,
+            inputs=None,
+            outputs=self.serialized_components()
         )
 
     def save_state(self, *args):
@@ -252,6 +268,19 @@ class AppMain:
                 assert(name in saved_data)
                 return serializer.load(saved_data[name])
         return None
+
+    def save_default_config(self, *args):
+        state = self.save_state(*args)
+        with open(self._default_config_path, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2)
+        return
+
+    def load_default_config(self):
+        if os.path.exists(self._default_config_path):
+            with open(self._default_config_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return self.load_state(data)
+        return self.load_state({})
 
     def S(self,
                 identifier: str,
@@ -466,6 +495,13 @@ class AppMain:
                                 self.create_generation_tab()
                             with gr.Tab("Import"):
                                 self.create_import_tab()
+
+                    self._save_defaults_button = gr.Button("Save Defaults")
+                    self._save_defaults_button.click(
+                        fn=self.save_default_config,
+                        inputs=self.serialized_components(),
+                        outputs=[]
+                    )
 
                     self.create_sidebar()
 
