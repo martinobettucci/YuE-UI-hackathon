@@ -1,4 +1,4 @@
-import WaveSurfer from '/gradio_api/file=scripts/wavesurfer.esm.js'
+import WaveSurfer from './wavesurfer.esm.js'
 
 class WaveSurferPlayer {
   constructor(player_container) {
