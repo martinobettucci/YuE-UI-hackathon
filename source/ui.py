@@ -504,7 +504,7 @@ class AppMain:
                 label="Select Music Genres",
                 info="Select genre tags that describe the musical style or characteristics (e.g., instrumental, genre, mood, vocal timbre, vocal gender). This is used as part of the generation prompt.",
                 choices=genres,
-                value=["8-bit"],
+                value=["acoustic guitar"],
                 interactive=True,
                 multiselect=True,
                 allow_custom_value=True,
@@ -517,7 +517,7 @@ class AppMain:
                 lines=4,
                 placeholder="Type the lyrics here...",
                 info="Text containing the lyrics for the music generation. These lyrics will be processed and split into structured segments to guide the generation process.",
-                value="[verse]\nI love AI hackathons",
+                value="[verse]\nStaring at the sunset, colors paint the sky\nThoughts of you keep swirling, can't deny\nI know I let you down, I made mistakes\nBut I'm here to mend the heart I didn't break\n\n[chorus]\nEvery road you take, I'll be one step behind\nEvery dream you chase, I'm reaching for the light\nYou can't fight this feeling now\nI won't back down\nYou know you can't deny it now\nI won't back down",
                 visible=False
             ))
 
@@ -1512,12 +1512,12 @@ class AppMain:
             label="Select Music Genres",
             info="Select genre tags that describe the musical style or characteristics (e.g., instrumental, genre, mood, vocal timbre, vocal gender). This is used as part of the generation prompt.",
             choices=genres,
-            value=["8-bit"],
+            value=["acoustic guitar"],
             multiselect=True,
             allow_custom_value=True,
             max_choices=50,
         )
-        self._simple_prompt = gr.Textbox(label="Lyrics", lines=4, value="[verse]\nI love AI hackathons")
+        self._simple_prompt = gr.Textbox(label="Lyrics", lines=4, value="[verse]\nStaring at the sunset, colors paint the sky\nThoughts of you keep swirling, can't deny\nI know I let you down, I made mistakes\nBut I'm here to mend the heart I didn't break\n\n[chorus]\nEvery road you take, I'll be one step behind\nEvery dream you chase, I'm reaching for the light\nYou can't fight this feeling now\nI won't back down\nYou know you can't deny it now\nI won't back down")
         self._simple_submit = gr.Button("Submit")
         self._simple_audio = gr.Audio(label="Generated song", visible=False)
 
