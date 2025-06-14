@@ -438,9 +438,9 @@ class AppMain:
             css = file.read()
 
         head="""
-        <script type="module" src="/gradio_api/file=scripts/wavesurfer.esm.js"></script>
-        <script type="module" src="/gradio_api/file=scripts/audioplayer.js"></script>
-        <script type="module" src="/gradio_api/file=scripts/utils.js"></script>
+        <script type="module" src="gradio_api/file=scripts/wavesurfer.esm.js"></script>
+        <script type="module" src="gradio_api/file=scripts/audioplayer.js"></script>
+        <script type="module" src="gradio_api/file=scripts/utils.js"></script>
         """
 
         with gr.Blocks(head=head, css=css, title="Hackathon Music Generator", theme=theme) as interface:
