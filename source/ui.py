@@ -19,6 +19,19 @@ from gradio_vistimeline import VisTimeline, VisTimelineData
 from tqdm import tqdm
 import torch
 
+import gradio.route_utils as gr_route_utils
+
+if os.getenv("FORCE_HTTPS", "false").lower() == "true":
+    _orig_get_root_url = gr_route_utils.get_root_url
+
+    def _https_root_url(request, route_path, root_path):
+        url = _orig_get_root_url(request, route_path, root_path)
+        if url.startswith("http://"):
+            url = "https://" + url[len("http://"):]
+        return url
+
+    gr_route_utils.get_root_url = _https_root_url
+
 def date_to_milliseconds(date):
     try:
         date = int(date)

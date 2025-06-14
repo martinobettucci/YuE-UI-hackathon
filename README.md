@@ -66,6 +66,11 @@ You can also specify a root path when running behind a reverse proxy:
 ./start_linux.sh --root_path /music
 ```
 
+If your proxy terminates SSL (HTTPS) before forwarding requests to YuE-UI, set
+the environment variable `FORCE_HTTPS=true` when launching the server. This
+forces all generated file URLs to use the HTTPS scheme to avoid mixed content
+warnings in browsers.
+
 
 After starting the gradio server open http://127.0.0.1:7860 in your browser to access the UI.
 
