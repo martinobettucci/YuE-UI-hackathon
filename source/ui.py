@@ -205,13 +205,6 @@ class AppMain:
             status_update_rate=1,
         )
 
-        # Ensure defaults are applied on every page refresh
-        self._interface.load(
-            fn=self.load_default_config,
-            inputs=None,
-            outputs=self.serialized_components()
-        )
-
     def save_state(self, *args):
         output = {}
 
@@ -511,6 +504,12 @@ class AppMain:
             self._simple_audio
 
             self.create_simple_events()
+
+            interface.load(
+                fn=self.load_default_config,
+                inputs=None,
+                outputs=self.serialized_components(),
+            )
 
         return interface
 
