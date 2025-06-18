@@ -22,6 +22,10 @@ from omegaconf import OmegaConf
 from torchaudio.transforms import Resample
 from tqdm import tqdm
 
+def align(n: int, m: int) -> int:
+    """Round ``n`` up to the nearest multiple of ``m``."""
+    return ((n + m - 1) // m) * m
+
 @dataclass
 class SampleSettings:
     # Here is suggested decoding config
@@ -334,7 +338,8 @@ class Stage1Pipeline_EXL2(Stage1Pipeline):
             cfg = True
 
         # Cache for the whole output sequence
-        cache = self.cache_mode(self.model, batch_size=bsz, max_seq_len=self.cache_size)
+        cache_len = align(self.cache_size, 32)
+        cache = self.cache_mode(self.model, batch_size=bsz, max_seq_len=cache_len)
 
         # Collect output here
         seq = torch.empty((bsz, 0), dtype=torch.long)
@@ -350,12 +355,12 @@ class Stage1Pipeline_EXL2(Stage1Pipeline):
 
         # Prepare start context
         start_context = torch.tensor([start_context] * bsz, dtype=torch.long)
-        if start_context.shape[-1] > self.cache_size:
+        if start_context.shape[-1] > cache_len:
             print(
                 f"Start context length {start_context.shape[-1]} exceeds cache "
-                f"size {self.cache_size}, trimming context."
+                f"size {cache_len}, trimming context."
             )
-            start_context = self.shorten_input(start_context, self.cache_size)
+            start_context = self.shorten_input(start_context, cache_len)
 
         seq = torch.cat((seq, start_context), dim=-1)
 
@@ -376,7 +381,7 @@ class Stage1Pipeline_EXL2(Stage1Pipeline):
             max_segment_tokens = min(nr_segment_tokens, max_new_tokens-nr_generated)
 
             # Use window slicing in case output sequence exceeds the context of model
-            max_context = self.cache_size - max_segment_tokens - 1
+            max_context = cache_len - max_segment_tokens - 1
             if seq.shape[-1] > max_context:
                 print(f"Section {iseg}: output length {seq.shape[-1]} exceeding context length {max_context}, " f"dropping early segment(s) from prompt.")
                 cache.current_seq_len = 0
